@@ -29,5 +29,13 @@ export class FullStore {
   put(id,page,expectedRevision){return this.request('/wiki/'+encodeURIComponent(id),'PATCH',{page,expectedRevision});}
   async history(id){return (await this.request('/wiki/'+encodeURIComponent(id)+'/history')).history;}
   context(options){return this.request('/context','POST',options);}
+  syncState(){return this.request('/sync');}
+  sync(delta){return this.request('/sync','POST',delta);}
+  browse({folder='',offset=0}={}){return this.request(`/browse?folder=${encodeURIComponent(folder)}&offset=${offset}`);}
+  resolve(target){return this.request('/resolve?target='+encodeURIComponent(target));}
+  links(id){return this.request('/wiki/'+encodeURIComponent(id)+'/links');}
+  async jobs(){return (await this.request('/jobs')).jobs;}
+  async conflicts(){return (await this.request('/conflicts')).conflicts;}
+  cancel(id){return this.request('/jobs/'+encodeURIComponent(id)+'/cancel','POST',{});}
   close(){this.closed=true;this.token='';}
 }

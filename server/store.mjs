@@ -93,8 +93,10 @@ export class Store {
   }
   context(scope, options = {}) {
     const candidates = this.list(scope, {...options, offset: 0, limit: 128, includeBody: true});
+    const required=this.metadata(scope,options.audience??'world').filter(p=>p.contextMode==='always');
+    const pages=[...required.map(p=>this.page(scope,p.id,options.audience)),...candidates.pages.filter(p=>!required.some(r=>r.id===p.id))];
     const pending = this.db.prepare("SELECT count(*) AS n FROM jobs j WHERE scope=? AND state IN ('queued','running','failed','cancelled') AND EXISTS (SELECT 1 FROM json_each(j.payload,'$.changes') c JOIN sources s ON s.scope=j.scope AND s.id=json_extract(c.value,'$.id') WHERE s.deleted=0 AND s.revision=json_extract(c.value,'$.revision'))").get(scopeKey(scope)).n;
-    return {...compileContext(candidates.pages, options), scopeRevision: candidates.scopeRevision, pendingJobs: pending, fresh: pending === 0, candidateLimitReached: candidates.hasMore};
+    return {...compileContext(pages, options), scopeRevision: candidates.scopeRevision, pendingJobs: pending, fresh: pending === 0, candidateLimitReached: candidates.hasMore};
   }
   source(scope, id, rev, audience = 'world') {
     revision(rev);
