@@ -60,3 +60,17 @@ test('Full LLM settings are credential-bound, redact keys, and keep accepted job
  assert.equal(store.jobs(scope)[0].state,'completed');assert.equal(calls,1);assert.equal((await request('DELETE')).status,200);
  assert.equal((await (await request('GET')).json()).configured,false);
 });
+
+
+test('replayed HTTP edits return the saved revision while independent stale edits still conflict',async t=>{
+ const {request,store,other}=await setup(t),page={title:'Alice',body:'Original fact'},data={page,expectedRevision:0,requestId:'edit-one'};
+ const first=await (await request('/wiki/p','PATCH',data)).json();
+ assert.deepEqual(await (await request('/wiki/p','PATCH',data)).json(),first);
+ assert.equal(store.history(scope,'p').length,1);
+ assert.equal((await request('/wiki/p','PATCH',{...data,page:{...page,body:'Different fact'}})).status,409);
+ assert.equal((await request('/wiki/p','PATCH',{...data,requestId:'different-edit'})).status,409);
+ assert.equal((await request('/wiki/p','PATCH',{page:{...page,body:'New revision'},expectedRevision:1,requestId:'edit-two'})).status,200);
+ assert.equal((await (await request('/wiki/p','PATCH',data)).json()).revision,1);
+ assert.equal(store.page(scope,'p').body,'New revision');
+ assert.equal((await request('/wiki/p','PATCH',data,other)).status,200);
+});

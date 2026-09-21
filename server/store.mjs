@@ -16,7 +16,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS history (scope TEXT, id TEXT, revision INTEGER, data TEXT, PRIMARY KEY(scope,id,revision));
       CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, scope TEXT, eventId TEXT, hash TEXT, payload TEXT, state TEXT, attempts INTEGER DEFAULT 0, error TEXT, createdAt INTEGER, updatedAt INTEGER, UNIQUE(scope,eventId));
       CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(state,createdAt);
-      CREATE INDEX IF NOT EXISTS pages_source ON pages(scope,source);`);
+      CREATE INDEX IF NOT EXISTS pages_source ON pages(scope,source);
+      CREATE TABLE IF NOT EXISTS edit_receipts (scope TEXT, audience TEXT, requestId TEXT, hash TEXT, page TEXT, revision INTEGER, createdAt INTEGER, PRIMARY KEY(scope,audience,requestId));`);
     this.memorySchema();
     this.db.function('lore_score', (data,query)=>scorePage(pageDefaults(JSON.parse(data)),query));
     this.db.prepare("UPDATE jobs SET state='queued' WHERE state='running'").run();
@@ -53,13 +54,24 @@ export class Store {
     const pages = rows.slice(0, limit).map(row => { const p = pageDefaults(JSON.parse(row.data)); if (!includeBody) { delete p.body; delete p.evidence; } return p; });
     return {pages, hasMore, nextOffset: hasMore ? offset + limit : null, scopeRevision: this.head(scope)};
   }
-  put(scope, id, input, expectedRevision, audience = 'world') {
+  put(scope, id, input, expectedRevision, audience = 'world', requestId = null) {
     boundedString(id, 'page ID');
     requireValue(!id.startsWith('source:'), 'Reserved page ID');
     revision(expectedRevision);
     const valid = validatePage(input), key = scopeKey(scope);
+    if(requestId!==null)boundedString(requestId,'request ID',128);
+    const hash=requestId===null?null:createHash('sha256').update(JSON.stringify([id,expectedRevision,valid])).digest('hex');
     requireValue(canRead(valid, audience), 'Visibility is outside credential audience', 403);
     return this.transaction(() => {
+      if(requestId!==null){
+        const receipt=this.db.prepare('SELECT * FROM edit_receipts WHERE scope=? AND audience=? AND requestId=?').get(key,audience,requestId);
+        if(receipt){
+          requireValue(receipt.hash===hash,'Request ID reused with different edit',409);
+          this.page(scope,id,audience);
+          const saved=JSON.parse(this.db.prepare('SELECT data FROM history WHERE scope=? AND id=? AND revision=?').get(key,id,receipt.revision).data);
+          requireValue(canRead(saved,audience),'Page not found',404);return saved;
+        }
+      }
       const row = this.db.prepare('SELECT data FROM pages WHERE scope=? AND id=?').get(key, id);
       const previous = row && JSON.parse(row.data);
       requireValue(!previous || canRead(previous, audience), 'Page not found', 404);
@@ -70,6 +82,10 @@ export class Store {
       requireValue(!this.db.prepare("SELECT id FROM pages WHERE scope=? AND id<>? AND json_extract(data,'$.path')=?").get(key,id,valid.path),'Path already exists',409);
       const page = {...valid, id, revision: expectedRevision + 1, origin: 'manual', evidence: previous?.evidence??[], active: previous?.active??true};
       this.save(key, page);
+      if(requestId!==null){
+        this.db.prepare('INSERT INTO edit_receipts VALUES (?,?,?,?,?,?,?)').run(key,audience,requestId,hash,id,page.revision,Date.now());
+        this.db.exec('DELETE FROM edit_receipts WHERE rowid NOT IN (SELECT rowid FROM edit_receipts ORDER BY rowid DESC LIMIT 512)');
+      }
       return page;
     });
   }

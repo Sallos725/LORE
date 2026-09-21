@@ -32,7 +32,7 @@ export class FullStore {
   identity(){return this.request('/identity');}
   list({query='',offset=0,limit=20}={}){return this.request(`/wiki?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`);}
   page(id){return this.request('/wiki/'+encodeURIComponent(id));}
-  put(id,page,expectedRevision){return this.request('/wiki/'+encodeURIComponent(id),'PATCH',{page,expectedRevision});}
+  put(id,page,expectedRevision){return this.request('/wiki/'+encodeURIComponent(id),'PATCH',{page,expectedRevision,requestId:crypto.randomUUID()});}
   async history(id){return (await this.request('/wiki/'+encodeURIComponent(id)+'/history')).history;}
   context(options){return this.request('/context','POST',options);}
   syncState(){return this.request('/sync');}

@@ -80,7 +80,7 @@ export function createServer(store, {workerInterval = 250, extractor = null, hos
         if(req.method==='GET'&&id&&action==='links')return json(res,200,store.links(scope,id,audience));
         if (req.method === 'GET' && id && action === 'history') return json(res,200,{history:store.history(scope,id,audience,Number(url.searchParams.get('offset') ?? 0))});
         if (req.method === 'PATCH' && id && !action) {
-          const data = await body(req); return json(res,200,store.put(scope,id,data.page,data.expectedRevision,audience));
+          const data = await body(req); return json(res,200,store.put(scope,id,data.page,data.expectedRevision,audience,data.requestId??null));
         }
       }
       if (req.method === 'GET' && resource === 'sources' && id && action) return json(res,200,store.source(scope,id,Number(action),audience));
