@@ -9,7 +9,9 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
   requireValue(authenticate || (Array.isArray(credentials) && credentials.length > 0 && credentials.length <= 128), 'Configure PocketRisu login authentication');
   const principals = new Map(),models=new Map();
   const modelKey=(scope,audience)=>JSON.stringify([scopeKey(scope),audience]);
-  const choose=job=>{const changes=JSON.parse(job.payload).changes,audience=changes.find(c=>c.visibility!=='public')?.visibility??'world';return models.get(JSON.stringify([job.scope,audience]))?.extractor??extractor;};
+  const defaultKey=(scope,audience)=>JSON.stringify(['default',scope.installationId,scope.userId,audience]);
+  const configured=(scope,audience)=>models.get(modelKey(scope,audience))??models.get(defaultKey(scope,audience));
+  const choose=job=>{const changes=JSON.parse(job.payload).changes,audience=changes.find(c=>c.visibility!=='public')?.visibility??'world',parts=JSON.parse(job.scope),scope={installationId:parts[0],userId:parts[1]};return (models.get(JSON.stringify([job.scope,audience]))??models.get(defaultKey(scope,audience)))?.extractor??extractor;};
   for (const item of credentials ?? []) {
     requireValue(typeof item.token === 'string' && item.token.length >= 32 && item.token.length <= 512, 'Use tokens of at least 32 characters');
     scopeKey(item.scope);
@@ -59,13 +61,13 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       catch { requireValue(false, 'Invalid URL encoding'); }
       const [resource, id, action] = parts;
       requireValue(parts.length <= 3, 'Not found', 404);
-      if (req.method === 'GET' && resource === 'identity' && parts.length === 1) return json(res,200,{scope,audience,scopeRevision:store.head(scope),extractionEnabled:!!(models.get(modelKey(scope,audience))?.extractor??extractor),configurationEnabled:principal.configure===true,collectionEnabled:principal.collect===true||principal.ingest===true});
+      if (req.method === 'GET' && resource === 'identity' && parts.length === 1) return json(res,200,{scope,audience,scopeRevision:store.head(scope),extractionEnabled:!!(configured(scope,audience)?.extractor??extractor),configurationEnabled:principal.configure===true,collectionEnabled:principal.collect===true||principal.ingest===true});
       if(resource==='llm'&&parts.length===1){
         requireValue(principal.configure===true,'LLM configuration credential required',403);
         const key=modelKey(scope,audience);
-        if(req.method==='POST'){requireValue(models.has(key)||models.size<128,'Configured chat limit reached',413);const config=providerConfig(await body(req));store.db.prepare('INSERT OR REPLACE INTO llm_settings VALUES (?,?)').run(key,JSON.stringify(config));models.set(key,{config,extractor:createExtractor(config)});return json(res,200,{configured:true,provider:config.provider,model:config.model});}
-        if(req.method==='DELETE'){store.db.prepare('DELETE FROM llm_settings WHERE key=?').run(key);models.delete(key);return json(res,200,{configured:!!extractor});}
-        if(req.method==='GET'){const config=models.get(key)?.config;return json(res,200,config?{configured:true,provider:config.provider,model:config.model,url:config.url}:{configured:!!extractor});}
+        if(req.method==='POST'){requireValue(models.has(key)||models.size<128,'Configured chat limit reached',413);const config=providerConfig(await body(req));store.transaction(()=>{for(const target of [key,defaultKey(scope,audience)])store.db.prepare('INSERT OR REPLACE INTO llm_settings VALUES (?,?)').run(target,JSON.stringify(config));});const configuredModel={config,extractor:createExtractor(config)};models.set(key,configuredModel);models.set(defaultKey(scope,audience),configuredModel);return json(res,200,{configured:true,provider:config.provider,model:config.model});}
+        if(req.method==='DELETE'){for(const target of [key,defaultKey(scope,audience)]){store.db.prepare('DELETE FROM llm_settings WHERE key=?').run(target);models.delete(target);}return json(res,200,{configured:!!extractor});}
+        if(req.method==='GET'){const config=configured(scope,audience)?.config;return json(res,200,config?{configured:true,provider:config.provider,model:config.model,url:config.url}:{configured:!!extractor});}
       }
       if(resource==='capture'&&req.method==='POST'&&parts.length===1){
         requireValue(principal.collect===true,'Collection credential required',403);

@@ -17,13 +17,13 @@ export class PocketRisuClient {
  }
  async capture(store,boundaries=null){
   const selector=await this.selection(),sessionToken=await this.session();let result;
-  if(store.capture)result=await store.capture({selector,sessionToken,identityOnly:boundaries===null,...(boundaries?{boundaries}:{})});
+  if(store?.capture)result=await store.capture({selector,sessionToken,identityOnly:boundaries===null,...(boundaries?{boundaries}:{})});
   else {
    const resolved=await resolveChatSelector((url,{signal,...args})=>this.host.nativeFetch(url,args),'',selector,sessionToken);
    const chat=await this.read(resolved,sessionToken),identity=savedIdentity(resolved,chat);
    if(boundaries===null)result=identity;
    else {
-    const bound=(await store.identity()).scope;requireValue(bound.characterId===identity.characterId&&bound.chatId===identity.chatId&&bound.branchId===identity.branchId,'다른 채팅입니다. 이 노트북의 자동 기억을 중지했습니다.');
+    const bound=(await store.identity()).scope;requireValue(bound.characterId===identity.characterId&&bound.chatId===identity.chatId&&bound.branchId===identity.branchId,'다른 채팅입니다. 이 노트북의 자동 기억을 중지했습니다.',409);
     const snapshot=confirmedSnapshot(resolved,chat,boundaries);let {cursor}=await store.syncState(),delta;
     for(let i=0;i<4;i++){delta=await readLoreDelta(snapshot,cursor);if(!sameCursor(cursor,delta.cursor))await store.sync(delta);cursor=delta.cursor;if(!delta.hasMore)break;}
     result={...identity,cursor,complete:!delta.hasMore};

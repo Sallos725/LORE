@@ -88,3 +88,18 @@ test('common request injection reaches provider and model-preset paths without a
   const image=[messages[0],{...messages[1],multimodals:[{type:'image',data:'fixture'}]}];assert.equal(await runtime.before(image,'model'),image);
  }finally{await runtime.stop();}
 });
+
+test('new chat IDs, including replacement at the same array index, use separate wiki clusters',async()=>{
+ const {chatNotebook}=await import('../plugin/notebook.mjs');
+ const f=fixture(),runtime=new AutoMemory(f.host),storage=await f.store.storage,clusters=new Map();
+ const get=async()=>{const scope={characterId:'c',chatId:f.character.chats[0].id,branchId:f.character.chats[0].id},key=await chatNotebook(scope);if(!clusters.has(key)){const store=new LiteStore(storage,key);await store.bind(scope);clusters.set(key,store);}return clusters.get(key);};
+ const original=await get();await original.put('old',{title:'Old secret',body:'Only in chat A.',contextMode:'always'},0);
+ await runtime.start({store:original,extractor:f.extractor,switchStore:get});
+ try{
+  f.character.chats[0].id='chat-B';const output=await runtime.before(messages,'model');assert.equal(output,messages);assert.equal(runtime.scope.chatId,'chat-B');assert.doesNotMatch(JSON.stringify(output),/Only in chat A/);
+  while(runtime.store.processing)await new Promise(r=>setTimeout(r,1));
+  assert.notEqual(await chatNotebook({characterId:'c',chatId:'chat',branchId:'chat'}),await chatNotebook({characterId:'c',chatId:'chat-B',branchId:'chat-B'}));
+  assert.equal((await original.page('old')).body,'Only in chat A.');assert.equal((await runtime.store.list({query:'Old secret'})).pages.length,0);
+  f.character.chats[0].id='chat';await runtime.before(messages,'model');assert.equal(runtime.store,original);
+ }finally{await runtime.stop();}
+});

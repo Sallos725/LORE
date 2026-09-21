@@ -28,7 +28,7 @@ export class FullStore {
     finally {clearTimeout(timer);}
   }
   configureLLM(config){return this.request('/llm','POST',config);}
-  capture(data){return this.request('/capture','POST',data);}
+  capture({sessionToken,...data}){return this.request('/capture','POST',data);}
   identity(){return this.request('/identity');}
   list({query='',offset=0,limit=20}={}){return this.request(`/wiki?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`);}
   page(id){return this.request('/wiki/'+encodeURIComponent(id));}

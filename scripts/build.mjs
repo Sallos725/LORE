@@ -2,7 +2,7 @@ import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 const {version}=JSON.parse(readFileSync(new URL('../package.json',import.meta.url)));
 // Deliberately dependency-free bundling: only named relative imports and exports
 // are allowed in these small source modules. Verify output syntax in CI.
-const modules=['shared/core.mjs','shared/wiki.mjs','shared/sync.mjs','shared/pocketrisu.mjs','shared/chat-delta.mjs','shared/providers.mjs','shared/extraction.mjs','plugin/backup.mjs','plugin/lite-store.mjs','plugin/full-store.mjs','plugin/ui.mjs','plugin/pocketrisu.mjs','plugin/runtime.mjs','plugin/main.mjs'];
+const modules=['shared/core.mjs','shared/wiki.mjs','shared/sync.mjs','shared/pocketrisu.mjs','shared/chat-delta.mjs','shared/providers.mjs','shared/extraction.mjs','plugin/backup.mjs','plugin/lite-store.mjs','plugin/full-store.mjs','plugin/ui.mjs','plugin/pocketrisu.mjs','plugin/runtime.mjs','plugin/notebook.mjs','plugin/main.mjs'];
 const body=modules.map(path=>readFileSync(path,'utf8').replace(/^import .* from .*;\n/gm,'').replace(/^export /gm,'')).join('\n');
 for(const edition of ['Lite','Full']){
   const path=edition==='Lite'?'lite/lore-lite.js':'full/plugin/lore-full.js';mkdirSync(path.slice(0,path.lastIndexOf('/')),{recursive:true});
