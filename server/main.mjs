@@ -1,3 +1,4 @@
+import {pocketRisuReader} from './pocketrisu.mjs';
 import {createExtractor} from '../shared/extraction.mjs';
 import {mkdirSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -12,7 +13,7 @@ try {
 mkdirSync(directory,{recursive:true});
 const store = new Store(join(directory,'lore.sqlite'));
 const extractor=process.env.LORE_LLM_URL?createExtractor({url:process.env.LORE_LLM_URL,model:process.env.LORE_LLM_MODEL,apiKey:process.env.LORE_LLM_API_KEY,timeoutMs:process.env.LORE_LLM_TIMEOUT_MS,jsonMode:['1','true'].includes(process.env.LORE_LLM_JSON_MODE??'false')}):null;
-const server = createServer(store, credentials,{extractor});
+const server = createServer(store, credentials,{extractor,hostReader:process.env.LORE_POCKETRISU_URL?pocketRisuReader(process.env.LORE_POCKETRISU_URL):null});
 const port = Number(process.env.PORT ?? 6011);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid PORT');
 server.listen(port, process.env.HOST ?? '127.0.0.1', () => console.log(`LORE listening on port ${port}`));

@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {LIMITS, boundedString, requireValue, scopeKey} from '../shared/core.mjs';
 const digest = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer(store, credentials, {workerInterval = 250, extractor = null} = {}) {
+export function createServer(store, credentials, {workerInterval = 250, extractor = null, hostReader = null} = {}) {
   requireValue(Array.isArray(credentials) && credentials.length > 0 && credentials.length <= 128, 'Configure 1–128 credentials');
   const principals = new Map();
   for (const item of credentials) {
@@ -50,6 +50,11 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       const [resource, id, action] = parts;
       requireValue(parts.length <= 3, 'Not found', 404);
       if (req.method === 'GET' && resource === 'identity' && parts.length === 1) return json(res,200,{scope,audience,scopeRevision:store.head(scope),extractionEnabled:!!extractor,collectionEnabled:principal.collect===true||principal.ingest===true});
+      if(resource==='capture'&&req.method==='POST'&&parts.length===1){
+        requireValue(principal.collect===true,'Collection credential required',403);
+        requireValue(hostReader,'Configure LORE_POCKETRISU_URL on the sidecar',503);
+        return json(res,200,await hostReader(store,scope,audience,await body(req)));
+      }
       if(resource==='sync'&&parts.length===1){
         requireValue(principal.collect===true||principal.ingest===true,'Collection credential required',403);
         if(req.method==='GET')return json(res,200,store.syncState(scope));
