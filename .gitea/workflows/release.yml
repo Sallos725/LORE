@@ -6,7 +6,7 @@ permissions:
   contents: read
   packages: write
 concurrency:
-  group: release-${{ github.ref }}
+  group: lore-container-release
   cancel-in-progress: false
 jobs:
   publish:
@@ -56,3 +56,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_SHA: ${{ github.sha }}
         run: python3 scripts/publish.py
+      - name: Update latest after successful release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/promote-image.py --image gitea.grantos.m1ndb3nd3r.com/m1ndb3nd3r/lore --tag "$RELEASE_TAG"
