@@ -4,10 +4,11 @@ import {once} from 'node:events';
 import {Store} from '../server/store.mjs';
 import {createServer} from '../server/http.mjs';
 const scope={installationId:'i',userId:'u',characterId:'c',chatId:'chat',branchId:'branch'};
+function testAuth(credentials){return req=>credentials.find(c=>req.headers.authorization==='Bearer '+c.token)&&{audience:'world',...credentials.find(c=>req.headers.authorization==='Bearer '+c.token)};}
 async function setup(t) {
   const store=new Store(':memory:');
   const token='a'.repeat(32), other='b'.repeat(32);
-  const server=createServer(store,[{token,scope},{token:other,scope:{...scope,userId:'other'},ingest:true}],{workerInterval:0});
+  const server=createServer(store,{authenticate:testAuth([{token,scope},{token:other,scope:{...scope,userId:'other'},ingest:true}]),workerInterval:0});
   server.listen(0,'127.0.0.1'); await once(server,'listening');
   t.after(async () => { const closed=once(server,'close'); server.close(); server.closeAllConnections(); await closed; store.close(); });
   const url=`http://127.0.0.1:${server.address().port}`;
@@ -47,7 +48,7 @@ test('Full LLM settings are credential-bound, redact keys, and keep accepted job
  let calls=0;
  const llm=serverFactory(async(req,res)=>{calls++;assert.equal(req.headers.authorization,'Bearer secret-key-fixture');let raw='';for await(const part of req)raw+=part;const data=JSON.parse(raw);assert.equal(data.model,'test-model');res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:'{"pages":[]}'}}]}));});
  llm.listen(0,'127.0.0.1');await once(llm,'listening');t.after(()=>llm.close());
- const store=new Store(':memory:'),token='configured-token-'.repeat(3),readToken='read-only-token-'.repeat(3),server=createServer(store,[{token,scope,collect:true,configure:true},{token:readToken,scope}],{workerInterval:10});
+ const store=new Store(':memory:'),token='configured-token-'.repeat(3),readToken='read-only-token-'.repeat(3),server=createServer(store,{authenticate:testAuth([{token,scope,collect:true,configure:true},{token:readToken,scope}]),workerInterval:10});
  server.listen(0,'127.0.0.1');await once(server,'listening');
  t.after(async()=>{const done=once(server,'close');server.close();server.closeAllConnections();await done;store.close();});
  const endpoint=`http://127.0.0.1:${server.address().port}`,config={provider:'custom',url:`http://127.0.0.1:${llm.address().port}/v1/chat/completions`,model:'test-model',apiKey:'secret-key-fixture'};

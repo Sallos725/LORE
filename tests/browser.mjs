@@ -13,7 +13,7 @@ const extract=async input=>[{title:'Alice',kind:'person',path:'people/Alice.md',
 const savedChat={id:'chat',message:[{chatId:'browser-m1',role:'char',data:'Alice lives in Seoul.'}]};
 const upstream=async(url)=>url.endsWith('/api/db/stats/characters')?Response.json({characters:[{chaId:'c'}]}):url.endsWith('/api/test_auth')?Response.json({status:'success'}):new Response(encodeFixture(savedChat));
 const hostReader=pocketRisuReader('http://pocketrisu.test',upstream);
-const store=new Store(':memory:');const server=createServer(store,[],{authenticate:pocketRisuAuth(store,'http://pocketrisu.test',upstream),workerInterval:50,extractor:extract,hostReader});server.listen(0,'127.0.0.1');await once(server,'listening');
+const store=new Store(':memory:');const server=createServer(store,{authenticate:pocketRisuAuth(store,'http://pocketrisu.test',upstream),workerInterval:50,extractor:extract,hostReader});server.listen(0,'127.0.0.1');await once(server,'listening');
 const base=`http://127.0.0.1:${server.address().port}`;
 try {
   for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){

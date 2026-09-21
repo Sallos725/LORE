@@ -16,7 +16,7 @@ const upstream=async(url,options)=>{
 test('Full connects with existing host login, derives stable scope, isolates installations and persists settings',async t=>{
  const store=new Store(':memory:');t.after(()=>store.close());
  const auth=pocketRisuAuth(store,'http://host.test',upstream);
- const server=createServer(store,[],{authenticate:auth,workerInterval:0});server.listen(0,'127.0.0.1');await once(server,'listening');
+ const server=createServer(store,{authenticate:auth,workerInterval:0});server.listen(0,'127.0.0.1');await once(server,'listening');
  t.after(async()=>{const done=once(server,'close');server.close();server.closeAllConnections();await done;});
  const base=`http://127.0.0.1:${server.address().port}`;
  let loginCalls=0;
@@ -35,7 +35,7 @@ test('Full connects with existing host login, derives stable scope, isolates ins
  // Reconstructing authentication and the HTTP worker preserves identity/settings.
  const reopened=pocketRisuAuth(store,'http://host.test',upstream),principal=await reopened({headers:{authorization:'Bearer host-login-fixture'}});
  assert.deepEqual((await reopened.connect(principal,{selector:{characterId:'character',index:0}})).scope,identity.scope);
- const restored=createServer(store,[],{authenticate:reopened,workerInterval:0});restored.listen(0,'127.0.0.1');await once(restored,'listening');
+ const restored=createServer(store,{authenticate:reopened,workerInterval:0});restored.listen(0,'127.0.0.1');await once(restored,'listening');
  try{const response=await fetch(`http://127.0.0.1:${restored.address().port}/identity`,{headers:{authorization:'Bearer host-login-fixture','x-lore-character':'character','x-lore-chat':'saved-chat'}});assert.equal((await response.json()).extractionEnabled,true);}finally{restored.close();restored.closeAllConnections();}
  const other=pocketRisuAuth(store,'http://other.test',async()=>Response.json({status:'success'}));
  await assert.rejects(other({headers:{authorization:'Bearer host-login-fixture','x-lore-character':'character','x-lore-chat':'saved-chat'}}),/Connect/);

@@ -1,24 +1,15 @@
 import {createExtractor} from '../shared/extraction.mjs';
 import {providerConfig} from '../shared/providers.mjs';
 import http from 'node:http';
-import {createHash} from 'node:crypto';
 import {LIMITS, boundedString, requireValue, scopeKey} from '../shared/core.mjs';
-const digest = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer(store, credentials, {workerInterval = 250, extractor = null, hostReader = null, authenticate = null} = {}) {
-  requireValue(authenticate || (Array.isArray(credentials) && credentials.length > 0 && credentials.length <= 128), 'Configure PocketRisu login authentication');
-  const principals = new Map(),models=new Map();
+export function createServer(store, {workerInterval = 250, extractor = null, hostReader = null, authenticate = null} = {}) {
+  requireValue(typeof authenticate==='function','Configure PocketRisu login authentication');
+  const models=new Map();
   const modelKey=(scope,audience)=>JSON.stringify([scopeKey(scope),audience]);
   const defaultKey=(scope,audience)=>JSON.stringify(['default',scope.installationId,scope.userId,audience]);
   const configured=(scope,audience)=>models.get(modelKey(scope,audience))??models.get(defaultKey(scope,audience));
   const choose=job=>{const changes=JSON.parse(job.payload).changes,audience=changes.find(c=>c.visibility!=='public')?.visibility??'world',parts=JSON.parse(job.scope),scope={installationId:parts[0],userId:parts[1]};return (models.get(JSON.stringify([job.scope,audience]))??models.get(defaultKey(scope,audience)))?.extractor??extractor;};
-  for (const item of credentials ?? []) {
-    requireValue(typeof item.token === 'string' && item.token.length >= 32 && item.token.length <= 512, 'Use tokens of at least 32 characters');
-    scopeKey(item.scope);
-    boundedString(item.audience ?? 'world', 'audience');
-    requireValue(!principals.has(digest(item.token)), 'Duplicate token');
-    principals.set(digest(item.token), {...item, audience: item.audience ?? 'world'});
-  }
   store.db.exec('CREATE TABLE IF NOT EXISTS llm_settings(key TEXT PRIMARY KEY,config TEXT NOT NULL);');
   for(const row of store.db.prepare('SELECT key,config FROM llm_settings').iterate()){
     const config=providerConfig(JSON.parse(row.config));models.set(row.key,{config,extractor:createExtractor(config)});
@@ -39,7 +30,7 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
     try {
       const value = JSON.parse(Buffer.concat(chunks).toString('utf8'));
       requireValue(value && typeof value === 'object' && !Array.isArray(value), 'Expected JSON object');
-      requireValue(!('scope' in value) && !('audience' in value), 'Scope and audience are credential-bound');
+      requireValue(!('scope' in value) && !('audience' in value), 'Scope and audience are bound to the authenticated login');
       return value;
     } catch (error) { if (error.status) throw error; throw Object.assign(new Error('Invalid JSON'), {status:400}); }
   };
@@ -50,8 +41,7 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       const url = new URL(req.url, 'http://lore.internal');
       if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, {ok:true, service:'lore', apiVersion:1});
       requireValue(active < 16, 'Busy; retry later', 503); active++; counted = true;
-      const token = req.headers.authorization?.match(/^Bearer (.{32,512})$/)?.[1];
-      const principal = authenticate ? await authenticate(req) : token && principals.get(digest(token));
+      const principal = await authenticate(req);
       requireValue(principal, 'Unauthorized', 401);
       if(url.pathname==='/connect'&&req.method==='POST'&&authenticate?.connect)return json(res,200,await authenticate.connect(principal,await body(req)));
       requireValue(principal.scope,'Connect the selected PocketRisu chat first',403);
@@ -63,21 +53,21 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       requireValue(parts.length <= 3, 'Not found', 404);
       if (req.method === 'GET' && resource === 'identity' && parts.length === 1) return json(res,200,{scope,audience,scopeRevision:store.head(scope),extractionEnabled:!!(configured(scope,audience)?.extractor??extractor),configurationEnabled:principal.configure===true,collectionEnabled:principal.collect===true||principal.ingest===true});
       if(resource==='llm'&&parts.length===1){
-        requireValue(principal.configure===true,'LLM configuration credential required',403);
+        requireValue(principal.configure===true,'LLM configuration permission required',403);
         const key=modelKey(scope,audience);
         if(req.method==='POST'){requireValue(models.has(key)||models.size<128,'Configured chat limit reached',413);const config=providerConfig(await body(req));store.transaction(()=>{for(const target of [key,defaultKey(scope,audience)])store.db.prepare('INSERT OR REPLACE INTO llm_settings VALUES (?,?)').run(target,JSON.stringify(config));});const configuredModel={config,extractor:createExtractor(config)};models.set(key,configuredModel);models.set(defaultKey(scope,audience),configuredModel);return json(res,200,{configured:true,provider:config.provider,model:config.model});}
         if(req.method==='DELETE'){for(const target of [key,defaultKey(scope,audience)]){store.db.prepare('DELETE FROM llm_settings WHERE key=?').run(target);models.delete(target);}return json(res,200,{configured:!!extractor});}
         if(req.method==='GET'){const config=configured(scope,audience)?.config;return json(res,200,config?{configured:true,provider:config.provider,model:config.model,url:config.url}:{configured:!!extractor});}
       }
       if(resource==='capture'&&req.method==='POST'&&parts.length===1){
-        requireValue(principal.collect===true,'Collection credential required',403);
+        requireValue(principal.collect===true,'Collection permission required',403);
         requireValue(hostReader,'Configure LORE_POCKETRISU_URL on the sidecar',503);
         return json(res,200,await hostReader(store,scope,audience,{...await body(req),...(principal.sessionToken?{sessionToken:principal.sessionToken}:{}),allowDiscovery:principal.configure===true}));
       }
       if(resource==='sync'&&parts.length===1){
-        requireValue(principal.collect===true||principal.ingest===true,'Collection credential required',403);
+        requireValue(principal.collect===true||principal.ingest===true,'Collection permission required',403);
         if(req.method==='GET')return json(res,200,store.syncState(scope));
-        if(req.method==='POST'){requireValue(!authenticate&&principal.ingest===true,'Use server-side capture',403);return json(res,200,store.sync(scope,await body(req),audience));}
+        if(req.method==='POST'){requireValue(principal.ingest===true,'Use server-side capture',403);return json(res,200,store.sync(scope,await body(req),audience));}
       }
       if(resource==='browse'&&req.method==='GET')return json(res,200,store.browse(scope,{audience,folder:url.searchParams.get('folder')??'',offset:Number(url.searchParams.get('offset')??0),limit:20}));
       if(resource==='resolve'&&req.method==='GET')return json(res,200,store.resolve(scope,url.searchParams.get('target')??'',audience));
@@ -98,11 +88,11 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
         const data=await body(req); return json(res,200,store.context(scope,{query:data.query ?? '',budgetBytes:data.budgetBytes ?? 4096,audience}));
       }
       if (resource === 'events' && req.method === 'POST' && parts.length === 1) {
-        requireValue(principal.ingest === true, 'Ingest credential required', 403);
+        requireValue(principal.ingest === true, 'Ingest permission required', 403);
         return json(res,202,store.enqueue(scope,await body(req),audience));
       }
       if (resource === 'jobs' && id) {
-        requireValue(principal.ingest === true || principal.collect === true, 'Collection credential required', 403);
+        requireValue(principal.ingest === true || principal.collect === true, 'Collection permission required', 403);
         requireValue(store.jobs(scope,audience).some(j=>j.id===id), 'Job not found',404);
         if (req.method === 'GET' && !action) return json(res,200,store.job(scope,id));
         if (req.method === 'POST' && action === 'retry') return json(res,200,store.retry(scope,id));
