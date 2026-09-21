@@ -42,7 +42,7 @@ try {
         await page.getByText('열린 범위:',{exact:false}).waitFor();await page.locator('[data-new]').click();
         const title=`${name} ${edition}`;await page.locator('[data-title]').fill(title);await page.locator('[data-path]').fill('characters/team/'+title+'.md');await page.locator('[data-aliases]').fill('별칭, lookup_'+name+'_'+edition);await page.locator('[data-body]').fill('<img src=x onerror="window.bad=true"> 인물은 서울에 있다.');
         await page.locator('[data-save]').click();await page.getByText('저장했습니다.',{exact:true}).waitFor();
-        await page.locator('[data-tree]').click();await page.locator('.list button').filter({hasText:'characters'}).click();await page.locator('.list button').filter({hasText:'team'}).click();await page.locator('.list button').filter({hasText:title}).waitFor();await page.locator('[data-search]').fill('lookup_'+name+'_'+edition);await page.locator('[data-find]').click();
+        await page.locator('[data-tree]').click();await page.getByRole('button',{name:'📁 characters',exact:true}).click();await page.getByRole('button',{name:'📁 team',exact:true}).click();await page.locator('.list button').filter({hasText:title}).waitFor();await page.locator('[data-search]').fill('lookup_'+name+'_'+edition);await page.locator('[data-find]').click();
         await page.waitForFunction(()=>document.querySelector('output').textContent.includes('1개 문서'));
         await page.locator('.list button').click();await page.locator('[data-history]').click();
         await page.waitForFunction(()=>document.querySelector('[data-preview]').textContent.includes('r1'));
