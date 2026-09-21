@@ -67,7 +67,7 @@ try {
         // Full UI configuration is exercised separately with a local HTTP LLM below.
         if(edition==='Full')await page.locator('[data-use-server]').check();
         await page.locator('[data-auto]').click();await page.getByText('자동 기억을 시작했습니다.',{exact:false}).waitFor();
-        await page.waitForFunction(async()=>{if(!window.beforeLore)return false;const messages=[{role:'assistant',content:'Alice lives in Seoul.',memo:'browser-m1'},{role:'user',content:'Alice',memo:'new-message'}];await window.beforeLore(messages,'model');const result=JSON.parse(await window.finalLore(JSON.stringify({model:'fixture',max_tokens:1024,messages:messages.map(({memo,...m})=>m)}),'openai_basic'));return result.messages.some(m=>m.content.includes('lore-memory-'));});
+        await page.waitForFunction(async()=>{if(!window.beforeLore)return false;const messages=[{role:'assistant',content:'Alice lives in Seoul.',memo:'browser-m1'},{role:'user',content:'Alice',memo:'new-message'}];const result=await window.beforeLore(messages,'model');return result.some(m=>m.content.includes('lore-memory-'));});
         await page.locator('[data-close]').click();assert.equal(await page.locator('.lore').count(),0);
         for(let i=0;i<5;i++){await page.evaluate(()=>window.openLore());await page.locator('[data-close]').click();}
         await page.evaluate(()=>window.disposeLore());assert.equal(await page.evaluate(()=>window.registrations.size),0);assert.equal(await page.evaluate(()=>window.beforeLore),null);assert.equal(await page.evaluate(()=>window.finalLore),null);

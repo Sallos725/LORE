@@ -518,8 +518,8 @@ function openUI({edition,host,connect,automation,onClose}) {
   <p>대화에서 이어지는 인물 · 사건 · 장면의 위키</p>
   <button data-host-scope>현재 채팅 확인</button><div data-connect></div><output role="status"></output><div data-work hidden>
   <details><summary>자동 기억 설정 · 작업 상태</summary><p>현재 채팅의 확정된 메시지를 수집하고 관련 기억을 생성 요청에 넣습니다. 다음 요청에 포함된 확정 대화까지 순서대로 처리합니다.</p>
-  <small>PocketRisu 수정 없이 동작합니다. 새 답변은 다음 요청에서 수집합니다. 기억 주입은 OpenAI 호환 일반 텍스트 요청을 지원합니다.</small>
-  <div data-llm></div><label>기억 토큰 예산<input data-memory-budget type="number" value="1024" min="128" max="4096"></label>
+  <small>PocketRisu 수정 없이 동작합니다. 새 답변은 다음 요청에서 수집합니다. 공통 요청 훅은 모델 프리셋을 포함한 텍스트 대화를 지원합니다. 이미지·도구 요청은 예산을 확인할 수 없어 주입을 생략합니다.</small>
+  <div data-llm></div><label>주입 방식<select data-injection-mode><option value="prompt">공통 요청 훅 (권장)</option><option value="final">최종 body 검사 (기존 OpenAI 텍스트)</option></select></label><small>공통 훅은 공급자 변환 전 요청 예산을 검사합니다. 이후 다른 플러그인·트리거가 추가하는 내용은 포함하지 못합니다.</small><label>기억 토큰 예산<input data-memory-budget type="number" value="1024" min="128" max="4096"></label>
   <div class="tools"><button data-auto>자동 기억 시작</button><button data-jobs>상태 · 작업 · 충돌 새로고침</button></div><pre data-auto-status></pre><div data-job-list></div><div data-conflicts></div></details>
   <label>위키 검색<input data-search maxlength="200" placeholder="${edition==='Lite'?'제목 · 별칭 · 경로':'제목 · 별칭 · 경로 · 본문'}"></label>
   <div class="tools"><button data-find>검색</button><button data-tree>폴더 탐색</button><button data-up>상위 폴더</button><button data-new>새 문서</button><button data-prev>이전</button><button data-next>다음</button><button data-context>컨텍스트 미리보기</button></div>
@@ -581,7 +581,7 @@ function openUI({edition,host,connect,automation,onClose}) {
   if(edition==='Full'){const toggle=()=>{$('[data-provider-fields]').hidden=$('[data-use-server]').checked;};$('[data-use-server]').addEventListener('change',toggle,{signal:controller.signal});toggle();}
 
   action('[data-start]',async()=>{store?.close();workspace.hidden=true;page=null;offset=0;tree=false;$('[data-editor]').hidden=true;$('[data-preview]').textContent='';connectionOptions=edition==='Full'?{url:$('[data-url]').value}:{notebook:$('[data-notebook]').value};store=await connect(connectionOptions);const identity=await store.identity();if(edition==='Full'&&!identity.extractionEnabled){$('[data-use-server]').checked=false;$('[data-provider-fields]').hidden=false;}if(!alive){store.close();return;}workspace.hidden=false;const visibility=$('[data-visibility]');visibility.replaceChildren();for(const value of new Set(identity.audience==='world'?['public']:['public',identity.audience])){const option=document.createElement('option');option.value=value;option.textContent=value;visibility.append(option);}await list();say('현재 채팅에 연결했습니다.');$('[data-auto-status]').textContent=automation?.status().message??'자동 기억 꺼짐';});
-  action('[data-auto]',async()=>{await automation.start({...connectionOptions,memoryBudget:Number($('[data-memory-budget]').value),llm:edition==='Lite'||!$('[data-use-server]').checked?{provider:$('[data-provider]').value,url:$('[data-llm-url]').value,model:$('[data-model]').value,apiKey:$('[data-api-key]').value,jsonMode:$('[data-json-mode]').checked}:undefined});if(alive){$('[data-auto-status]').textContent=automation.status().message;say('자동 기억을 시작했습니다. 창을 닫아도 현재 탭에서는 계속 동작합니다.');}});
+  action('[data-auto]',async()=>{await automation.start({...connectionOptions,injectionMode:$('[data-injection-mode]').value,memoryBudget:Number($('[data-memory-budget]').value),llm:edition==='Lite'||!$('[data-use-server]').checked?{provider:$('[data-provider]').value,url:$('[data-llm-url]').value,model:$('[data-model]').value,apiKey:$('[data-api-key]').value,jsonMode:$('[data-json-mode]').checked}:undefined});if(alive){$('[data-auto-status]').textContent=automation.status().message;say('자동 기억을 시작했습니다. 창을 닫아도 현재 탭에서는 계속 동작합니다.');}});
   action('[data-host-scope]',async()=>say('현재 채팅 ID: '+JSON.stringify(await automation.scope(edition==='Full'?{url:$('[data-url]').value}:{notebook:$('[data-notebook]').value}))));
   action('[data-stop]',async()=>{await automation.stop();if(alive)$('[data-auto-status]').textContent=automation.status().message;});
   action('[data-jobs]',async()=>{const jobs=await store.jobs(),conflicts=await store.conflicts();if(!alive)return;$('[data-auto-status]').textContent=JSON.stringify(automation.status(),null,2);const list=$('[data-job-list]');list.replaceChildren();for(const j of jobs){const row=document.createElement('div');row.textContent=`${j.state} · 시도 ${j.attempts} ${j.error??''} `;if(['queued','running','failed'].includes(j.state)){const button=document.createElement('button');button.textContent='취소';button.onclick=()=>run(async()=>{await store.cancel(j.id);say('작업을 취소했습니다.');});row.append(button);}if(['failed','cancelled'].includes(j.state)){const retry=document.createElement('button');retry.textContent='재시도';retry.onclick=()=>run(async()=>{await store.retry(j.id);say('작업을 다시 대기열에 넣었습니다.');});row.append(retry);}list.append(row);}const out=$('[data-conflicts]');out.replaceChildren();for(const c of conflicts){const detail=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='교정과 충돌: '+c.proposal.title;pre.textContent=JSON.stringify(c.proposal,null,2);const dismiss=document.createElement('button');dismiss.textContent='검토 완료 · 제안 제거';dismiss.onclick=()=>run(async()=>{await store.dismissConflict(c.id);detail.remove();});detail.append(summary,pre,dismiss);out.append(detail);}});
@@ -639,17 +639,17 @@ function requestBudget(messages,memory,settings,responseReserve,memoryBudget) {
 const sameChat=(a,b)=>['characterId','chatId','branchId'].every(k=>a?.[k]&&a[k]===b?.[k]);
 class AutoMemory {
  constructor(host){this.host=host;this.client=new PocketRisuClient(host);this.state={enabled:false,message:'자동 기억 꺼짐'};this.epoch=0;this.requestGeneration=0;this.hookBusy=false;this.marker=crypto.randomUUID();}
- async start({store,extractor,memoryBudget=1024,intervalMs=2000}){
+ async start({store,extractor,memoryBudget=1024,injectionMode='prompt',intervalMs=2000}){
   await this.stop();requireValue(Number.isInteger(memoryBudget)&&memoryBudget>=128&&memoryBudget<=4096,'기억 예산은 128–4096입니다.');
   const identity=await this.client.identity(store),scope={characterId:identity.characterId,chatId:identity.chatId,branchId:identity.branchId};
   if(store.bind)await store.bind(scope);const remote=await store.identity();
   requireValue(sameChat(scope,remote.scope),'열린 채팅과 LORE 저장 범위가 다릅니다.');
   requireValue(remote.collectionEnabled,'대화 수집을 사용할 수 없습니다.');requireValue(extractor||remote.extractionEnabled,'기억 추출 모델을 먼저 설정하세요.');
-  this.store=store;this.scope=scope;this.extractor=extractor;this.memoryBudget=memoryBudget;this.controller=new AbortController();
+  requireValue(['prompt','final'].includes(injectionMode),'Invalid injection mode');this.injectionMode=injectionMode;this.store=store;this.scope=scope;this.extractor=extractor;this.memoryBudget=memoryBudget;this.controller=new AbortController();
   this.beforeHook=(messages,type)=>this.before(messages,type);this.bodyHook=(body,type)=>this.finalBody(body,type);
   try {
-   requireValue(typeof this.host.registerBodyIntercepter==='function','요청 검사 API를 지원하는 PocketRisu가 필요합니다.');
-   this.bodyRegistration=await this.host.registerBodyIntercepter(this.bodyHook);requireValue(this.bodyRegistration?.id,'요청 검사 권한이 거부되었습니다.');
+   if(injectionMode==='final'){requireValue(typeof this.host.registerBodyIntercepter==='function','요청 검사 API를 지원하는 PocketRisu가 필요합니다.');
+   this.bodyRegistration=await this.host.registerBodyIntercepter(this.bodyHook);requireValue(this.bodyRegistration?.id,'요청 검사 권한이 거부되었습니다.');}
    await this.host.addRisuReplacer('beforeRequest',this.beforeHook);this.registered=true;
    this.state={enabled:true,message:'자동 기억 켜짐 · 다음 대화 요청부터 저장된 확정 대화를 수집합니다.'};
    if(extractor){this.timer=setInterval(()=>this.process(),intervalMs);this.timer?.unref?.();void this.process();}
@@ -666,19 +666,31 @@ class AutoMemory {
  async before(messages,type){
   if(!this.state.enabled||type!=='model'||!Array.isArray(messages))return messages;
   this.receipt=null;this.requestGeneration++;if(this.hookBusy)return messages;this.hookBusy=true;
-  const epoch=this.epoch,store=this.store;let expired=false;
+  const epoch=this.epoch,store=this.store,generation=this.requestGeneration;let expired=false;
   const work=(async()=>{
    const boundaries=confirmedBoundaries(messages);requireValue(boundaries.length,'저장된 이전 대화가 생기면 기억 수집을 시작합니다.');
    const captured=await this.client.capture(store,boundaries);requireValue(sameChat(captured,this.scope)&&captured.complete,'이전 대화 수집 중 · 이번 주입은 생략합니다.');
-   if(epoch!==this.epoch||expired)return;void this.process();
+   if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return;void this.process();
    const lastUser=messages.filter(m=>m.role==='user').at(-1)?.content;requireValue(typeof lastUser==='string','텍스트 요청만 주입합니다.');
    const context=await store.context({query:lastUser.slice(-200),budgetBytes:Math.max(1,this.memoryBudget-256)});requireValue(!context.requiredOverflow,'필수 기억이 예산을 넘었습니다.');
-   if(epoch!==this.epoch||expired)return;
-   this.state={...this.state,message:context.text?'기억 준비 완료 · 지원 요청의 최종 전송 시 검사합니다.':'수집 완료 · 기억 추출을 기다리는 중입니다.',collected:captured.cursor.count,included:context.included,excluded:context.excluded};
-   if(context.text)this.receipt={epoch,cursor:captured.cursor,boundaries,selector:captured.selector,lastUser,memory:this.wrap(context.text),fresh:context.fresh,createdAt:Date.now()};
+   if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return;
+   this.state={...this.state,message:context.text?'기억 준비 완료 · 최종 전송 시 검사합니다.':'수집 완료 · 기억 추출을 기다리는 중입니다.',collected:captured.cursor.count,included:context.included,excluded:context.excluded};
+   if(!context.text)return messages;
+   const memory=this.wrap(context.text);
+   if(this.injectionMode==='prompt'){
+    const settings=await this.host.getDatabase(['maxContext','maxResponse']);
+    const budget=requestBudget(messages,memory,settings??{},undefined,this.memoryBudget);
+    requireValue(budget.fits,'기억 또는 전체 요청 예산 초과 · 텍스트 대화인지 확인하세요.');
+    if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return messages;
+    const at=messages.findLastIndex(m=>m.role==='user');
+    this.state={...this.state,message:context.fresh?'기억을 요청에 추가했습니다.':'완료된 기억을 요청에 추가했습니다. 일부 대화는 추출 중입니다.',finalBudget:budget,budgetStage:'beforeRequest'};
+    return [...messages.slice(0,at),{role:'system',content:memory},...messages.slice(at)];
+   }
+   this.receipt={epoch,cursor:captured.cursor,boundaries,selector:captured.selector,lastUser,memory,fresh:context.fresh,createdAt:Date.now()};
+   return messages;
   })();
   work.finally(()=>{this.hookBusy=false;}).catch(()=>{});
-  try{await this.deadline(work);}catch(error){expired=true;if(epoch===this.epoch)this.state={...this.state,message:error.message};}
+  try{return await this.deadline(work)??messages;}catch(error){expired=true;if(epoch===this.epoch&&generation===this.requestGeneration)this.state={...this.state,message:error.message};}
   return messages;
  }
  async finalBody(raw,type){
@@ -710,7 +722,7 @@ async function install(host,edition) {
     // Native fetch transfers a response through RPC; avoid nonserializable signals
     // and never overlap an unabortable provider request after its local deadline.
     const providerFetch=async(url,{signal,...args})=>{if(llmBusy)throw Error('이전 LLM 요청이 아직 끝나지 않았습니다.');llmBusy=true;try{return await host.nativeFetch(url,{...args,requestTimeoutMs:options.llm?.timeoutMs??45000});}finally{llmBusy=false;}};
-    try{if(edition==='Full'&&options.llm)await autoStore.configureLLM(options.llm);await runtime.start({store:autoStore,memoryBudget:options.memoryBudget,extractor:edition==='Lite'?createExtractor(options.llm,providerFetch):null});}catch(error){autoStore?.close();autoStore=null;throw error;}
+    try{if(edition==='Full'&&options.llm)await autoStore.configureLLM(options.llm);await runtime.start({store:autoStore,memoryBudget:options.memoryBudget,injectionMode:options.injectionMode,extractor:edition==='Lite'?createExtractor(options.llm,providerFetch):null});}catch(error){autoStore?.close();autoStore=null;throw error;}
   }};
   const open=async()=>{
     if(!alive)return;ui?.close();

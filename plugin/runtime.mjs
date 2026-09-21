@@ -4,17 +4,17 @@ import {PocketRisuClient,confirmedBoundaries,requestBudget} from './pocketrisu.m
 export const sameChat=(a,b)=>['characterId','chatId','branchId'].every(k=>a?.[k]&&a[k]===b?.[k]);
 export class AutoMemory {
  constructor(host){this.host=host;this.client=new PocketRisuClient(host);this.state={enabled:false,message:'자동 기억 꺼짐'};this.epoch=0;this.requestGeneration=0;this.hookBusy=false;this.marker=crypto.randomUUID();}
- async start({store,extractor,memoryBudget=1024,intervalMs=2000}){
+ async start({store,extractor,memoryBudget=1024,injectionMode='prompt',intervalMs=2000}){
   await this.stop();requireValue(Number.isInteger(memoryBudget)&&memoryBudget>=128&&memoryBudget<=4096,'기억 예산은 128–4096입니다.');
   const identity=await this.client.identity(store),scope={characterId:identity.characterId,chatId:identity.chatId,branchId:identity.branchId};
   if(store.bind)await store.bind(scope);const remote=await store.identity();
   requireValue(sameChat(scope,remote.scope),'열린 채팅과 LORE 저장 범위가 다릅니다.');
   requireValue(remote.collectionEnabled,'대화 수집을 사용할 수 없습니다.');requireValue(extractor||remote.extractionEnabled,'기억 추출 모델을 먼저 설정하세요.');
-  this.store=store;this.scope=scope;this.extractor=extractor;this.memoryBudget=memoryBudget;this.controller=new AbortController();
+  requireValue(['prompt','final'].includes(injectionMode),'Invalid injection mode');this.injectionMode=injectionMode;this.store=store;this.scope=scope;this.extractor=extractor;this.memoryBudget=memoryBudget;this.controller=new AbortController();
   this.beforeHook=(messages,type)=>this.before(messages,type);this.bodyHook=(body,type)=>this.finalBody(body,type);
   try {
-   requireValue(typeof this.host.registerBodyIntercepter==='function','요청 검사 API를 지원하는 PocketRisu가 필요합니다.');
-   this.bodyRegistration=await this.host.registerBodyIntercepter(this.bodyHook);requireValue(this.bodyRegistration?.id,'요청 검사 권한이 거부되었습니다.');
+   if(injectionMode==='final'){requireValue(typeof this.host.registerBodyIntercepter==='function','요청 검사 API를 지원하는 PocketRisu가 필요합니다.');
+   this.bodyRegistration=await this.host.registerBodyIntercepter(this.bodyHook);requireValue(this.bodyRegistration?.id,'요청 검사 권한이 거부되었습니다.');}
    await this.host.addRisuReplacer('beforeRequest',this.beforeHook);this.registered=true;
    this.state={enabled:true,message:'자동 기억 켜짐 · 다음 대화 요청부터 저장된 확정 대화를 수집합니다.'};
    if(extractor){this.timer=setInterval(()=>this.process(),intervalMs);this.timer?.unref?.();void this.process();}
@@ -31,19 +31,31 @@ export class AutoMemory {
  async before(messages,type){
   if(!this.state.enabled||type!=='model'||!Array.isArray(messages))return messages;
   this.receipt=null;this.requestGeneration++;if(this.hookBusy)return messages;this.hookBusy=true;
-  const epoch=this.epoch,store=this.store;let expired=false;
+  const epoch=this.epoch,store=this.store,generation=this.requestGeneration;let expired=false;
   const work=(async()=>{
    const boundaries=confirmedBoundaries(messages);requireValue(boundaries.length,'저장된 이전 대화가 생기면 기억 수집을 시작합니다.');
    const captured=await this.client.capture(store,boundaries);requireValue(sameChat(captured,this.scope)&&captured.complete,'이전 대화 수집 중 · 이번 주입은 생략합니다.');
-   if(epoch!==this.epoch||expired)return;void this.process();
+   if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return;void this.process();
    const lastUser=messages.filter(m=>m.role==='user').at(-1)?.content;requireValue(typeof lastUser==='string','텍스트 요청만 주입합니다.');
    const context=await store.context({query:lastUser.slice(-200),budgetBytes:Math.max(1,this.memoryBudget-256)});requireValue(!context.requiredOverflow,'필수 기억이 예산을 넘었습니다.');
-   if(epoch!==this.epoch||expired)return;
-   this.state={...this.state,message:context.text?'기억 준비 완료 · 지원 요청의 최종 전송 시 검사합니다.':'수집 완료 · 기억 추출을 기다리는 중입니다.',collected:captured.cursor.count,included:context.included,excluded:context.excluded};
-   if(context.text)this.receipt={epoch,cursor:captured.cursor,boundaries,selector:captured.selector,lastUser,memory:this.wrap(context.text),fresh:context.fresh,createdAt:Date.now()};
+   if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return;
+   this.state={...this.state,message:context.text?'기억 준비 완료 · 최종 전송 시 검사합니다.':'수집 완료 · 기억 추출을 기다리는 중입니다.',collected:captured.cursor.count,included:context.included,excluded:context.excluded};
+   if(!context.text)return messages;
+   const memory=this.wrap(context.text);
+   if(this.injectionMode==='prompt'){
+    const settings=await this.host.getDatabase(['maxContext','maxResponse']);
+    const budget=requestBudget(messages,memory,settings??{},undefined,this.memoryBudget);
+    requireValue(budget.fits,'기억 또는 전체 요청 예산 초과 · 텍스트 대화인지 확인하세요.');
+    if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return messages;
+    const at=messages.findLastIndex(m=>m.role==='user');
+    this.state={...this.state,message:context.fresh?'기억을 요청에 추가했습니다.':'완료된 기억을 요청에 추가했습니다. 일부 대화는 추출 중입니다.',finalBudget:budget,budgetStage:'beforeRequest'};
+    return [...messages.slice(0,at),{role:'system',content:memory},...messages.slice(at)];
+   }
+   this.receipt={epoch,cursor:captured.cursor,boundaries,selector:captured.selector,lastUser,memory,fresh:context.fresh,createdAt:Date.now()};
+   return messages;
   })();
   work.finally(()=>{this.hookBusy=false;}).catch(()=>{});
-  try{await this.deadline(work);}catch(error){expired=true;if(epoch===this.epoch)this.state={...this.state,message:error.message};}
+  try{return await this.deadline(work)??messages;}catch(error){expired=true;if(epoch===this.epoch&&generation===this.requestGeneration)this.state={...this.state,message:error.message};}
   return messages;
  }
  async finalBody(raw,type){

@@ -21,7 +21,7 @@ function fixture(){
 const messages=[{role:'assistant',content:'Alice lives in Seoul.',memo:'m1'},{role:'user',content:'Where is Alice?',memo:'new'}];
 const wire=()=>JSON.stringify({model:'fixture',max_tokens:1024,messages:messages.map(({memo,...m})=>m)});
 test('stock APIs collect canonical prefix; independent LLM extracts; JSON-string final hook injects',async()=>{
- const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
+ const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor,injectionMode:'final'});
  try {
   assert.equal((await f.store.index()).length,0);assert.equal(await runtime.before(messages,'model'),messages);
   while(f.store.processing)await new Promise(r=>setTimeout(r,1));await runtime.process();
@@ -34,7 +34,7 @@ test('stock APIs collect canonical prefix; independent LLM extracts; JSON-string
  }finally{await runtime.stop();assert.equal(f.hooks.size,0);}
 });
 test('missing saved anchors, offline, alternate requests and changed chats fail open',async()=>{
- const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
+ const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor,injectionMode:'final'});
  try{
   assert.equal(await runtime.before(messages,'other'),messages);assert.equal((await f.store.syncState()).cursor,null);
   const noAnchor=[{role:'user',content:'first'}];assert.equal(await runtime.before(noAnchor,'model'),noAnchor);
@@ -65,7 +65,7 @@ test('mandatory pages ignore search and overflow refuses incomplete context',asy
 });
 
 test('a late final check cannot claim injection after the request deadline',async()=>{
- const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
+ const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor,injectionMode:'final'});
  try{
   await runtime.before(messages,'model');while(f.store.processing)await new Promise(r=>setTimeout(r,1));
   await runtime.before(messages,'model');assert.ok(runtime.receipt);
@@ -74,5 +74,17 @@ test('a late final check cannot claim injection after the request deadline',asyn
   const deadline=runtime.deadline.bind(runtime);runtime.deadline=work=>deadline(work,10);
   assert.equal(await runtime.finalBody(wire(),'openai_basic'),wire());const state={...runtime.state};
   release();await new Promise(r=>setTimeout(r,20));assert.deepEqual(runtime.state,state);assert.match(state.message,/시간 초과/);
+ }finally{await runtime.stop();}
+});
+
+test('common request injection reaches provider and model-preset paths without a final-body API',async()=>{
+ const f=fixture();delete f.host.registerBodyIntercepter;const runtime=new AutoMemory(f.host);
+ await runtime.start({store:f.store,extractor:f.extractor});
+ try{
+  await runtime.before(messages,'model');while(f.store.processing)await new Promise(r=>setTimeout(r,1));
+  const prepared=await runtime.before(messages,'model');assert.equal(prepared.length,3);assert.match(prepared[1].content,/lore-memory/);
+  assert.equal(messages.length,2);assert.equal(runtime.receipt,null);assert.equal(runtime.state.budgetStage,'beforeRequest');
+  f.state.maxContext=1100;assert.equal(await runtime.before(messages,'model'),messages);
+  const image=[messages[0],{...messages[1],multimodals:[{type:'image',data:'fixture'}]}];assert.equal(await runtime.before(image,'model'),image);
  }finally{await runtime.stop();}
 });

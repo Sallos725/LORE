@@ -13,7 +13,7 @@ export async function install(host,edition) {
     // Native fetch transfers a response through RPC; avoid nonserializable signals
     // and never overlap an unabortable provider request after its local deadline.
     const providerFetch=async(url,{signal,...args})=>{if(llmBusy)throw Error('이전 LLM 요청이 아직 끝나지 않았습니다.');llmBusy=true;try{return await host.nativeFetch(url,{...args,requestTimeoutMs:options.llm?.timeoutMs??45000});}finally{llmBusy=false;}};
-    try{if(edition==='Full'&&options.llm)await autoStore.configureLLM(options.llm);await runtime.start({store:autoStore,memoryBudget:options.memoryBudget,extractor:edition==='Lite'?createExtractor(options.llm,providerFetch):null});}catch(error){autoStore?.close();autoStore=null;throw error;}
+    try{if(edition==='Full'&&options.llm)await autoStore.configureLLM(options.llm);await runtime.start({store:autoStore,memoryBudget:options.memoryBudget,injectionMode:options.injectionMode,extractor:edition==='Lite'?createExtractor(options.llm,providerFetch):null});}catch(error){autoStore?.close();autoStore=null;throw error;}
   }};
   const open=async()=>{
     if(!alive)return;ui?.close();
