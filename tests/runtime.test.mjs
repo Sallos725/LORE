@@ -103,3 +103,16 @@ test('new chat IDs, including replacement at the same array index, use separate 
   f.character.chats[0].id='chat';await runtime.before(messages,'model');assert.equal(runtime.store,original);
  }finally{await runtime.stop();}
 });
+
+
+test('a follow-up without a name recalls relevant wiki facts using recent conversation',async()=>{
+ const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:async()=>[]});
+ try{
+  await f.store.put('profession',{title:'Alice',aliases:['앨리스'],body:'Her profession is a pilot.'},0);
+  await f.store.put('unrelated',{title:'Unrelated castle',body:'Unrelated private subplot.'},0);
+  const followup=[messages[0],{role:'user',content:'그녀의 직업은 뭐였지?',memo:'next'}];
+  assert.equal((await f.store.context({query:followup[1].content})).text,'');
+  const output=await runtime.before(followup,'model');
+  assert.equal(output.length,3);assert.match(output[1].content,/profession is a pilot/);assert.doesNotMatch(output[1].content,/Unrelated private subplot/);
+ }finally{await runtime.stop();}
+});
