@@ -55,7 +55,12 @@ methods='''        getLoreChatDelta: async (cursor: any, mode = 'delta') => {
 if args.apply:
     dirty=subprocess.check_output(['git','-C',str(args.checkout),'status','--porcelain'],text=True).strip()
     if dirty:raise SystemExit('Use a clean host checkout; refusing to mix existing edits')
-    subprocess.run(['git','-C',str(args.checkout),'switch','-c','lore-bounded-plugin-api'],check=True)
+    branch='lore-bounded-plugin-api'
+    suffix=1
+    while subprocess.run(['git','-C',str(args.checkout),'show-ref','--verify','--quiet','refs/heads/'+branch]).returncode==0:
+        suffix+=1
+        branch=f'lore-bounded-plugin-api-{suffix}'
+    subprocess.run(['git','-C',str(args.checkout),'switch','-c',branch],check=True)
     path.write_text(imports+text.replace(anchor,methods+anchor))
     shutil.copyfile(ROOT/'integration/pocketrisu-lore.mjs',path.parent/'lore-host.mjs')
     print('Installed. Build PocketRisu normally; no running service was changed.')

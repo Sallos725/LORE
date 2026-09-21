@@ -11,7 +11,7 @@ python3 scripts/install-host.py /absolute/path/to/PocketRisu
 python3 scripts/install-host.py /absolute/path/to/PocketRisu --apply
 ```
 
-첫 명령은 대상 커밋·삽입 지점을 검사한다. `--apply`는 깨끗한 대상 저장소에 `lore-bounded-plugin-api` 브랜치를 만들고 V3 API 두 개와 helper를 추가한다. 다른 커밋이나 기존 수정이 있으면 중단한다. 이후 **PocketRisu 자체 빌드·설치 절차로 수정된 호스트를 배포**해야 한다. 이 스크립트는 실행 중인 서비스를 교체하지 않는다. 두 번째 적용은 중복 삽입하지 않는다.
+첫 명령은 대상 커밋·삽입 지점을 검사한다. `--apply`는 깨끗한 대상 저장소에 `lore-bounded-plugin-api` 브랜치(이미 있으면 숫자 접미사)를 만들고 V3 API 두 개와 helper를 추가한다. 다른 커밋이나 기존 수정이 있으면 중단한다. 이후 **PocketRisu 자체 빌드·설치 절차로 수정된 호스트를 배포**해야 한다. 이 스크립트는 실행 중인 서비스를 교체하지 않는다. 두 번째 적용은 중복 삽입하지 않는다.
 
 - `getLoreChatDelta(cursor, mode)`: 열린 hydrated chat, writer lock의 active/free 상태를 확인한다. identity / delta / state 모드. 캐릭터 `chaId`, 채팅 `id`, 메시지 `chatId`를 사용한다. 한 채팅 ID를 하나의 분기 범위로 취급한다.
 - `checkLoreBudget(messages, memory, memoryBudget, responseReserve)`: 현재 호스트의 `ChatTokenizer`로 계산하고 응답 예약량과 framing 여유 32 tokens를 더한다.
