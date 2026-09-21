@@ -31,7 +31,7 @@ Gitea job token의 패키지 권한은 GitHub와 다르므로 별도 PAT를 사�
 4. 같은 커밋의 annotated `v<VERSION>` 태그를 GitHub에 push한다. Gitea는 runner 복구 후 별도로 발행한다. **이 단계가 실제 발행을 시작한다.**
 5. 각각의 Actions 결과, release 첨부 파일, SHA256SUMS, amd64/arm64 이미지 manifest를 확인한다.
 
-산출물은 Lite JS, Full JS, Full ZIP, Node 서버 tar.gz, PocketRisu 호스트 확장 ZIP, release.json 및 SHA256SUMS다. 파일 목록은 명시적 allowlist로 만들며 `.env`, credentials, data, .git, node_modules는 포함하지 않는다. 파이썬 표준 라이브러리만 사용해 두 플랫폼에서 같은 패키지를 만든다.
+산출물은 실행 파일 4개와 manifest/checksum 총 6개다. Lite JS, Full JS, Full ZIP, Node 서버 tar.gz, release.json 및 SHA256SUMS다. 파일 목록은 명시적 allowlist로 만들며 `.env`, credentials, data, .git, node_modules는 포함하지 않는다. 파이썬 표준 라이브러리만 사용해 두 플랫폼에서 같은 패키지를 만든다.
 
 검증/브라우저 테스트/설치 smoke test가 성공한 뒤 이미지를 push하고, draft release에 모든 첨부 파일을 업로드한 다음 공개한다. 실패한 draft는 재실행 시 첨부 파일을 다시 올릴 수 있다. 이미 공개된 release는 덮어쓰지 않고 새 버전으로 수정한다. 이미지 push 성공 후 release 업로드가 실패하면 이미지가 먼저 존재할 수 있다. 릴리스 프로세스 전체가 두 서비스에 걸친 원자적 트랜잭션은 아니다.
 

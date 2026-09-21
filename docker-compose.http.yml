@@ -1,0 +1,5 @@
+# Optional HTTP access; choose a private-interface address for phone access.
+services:
+  lore:
+    ports:
+      - "${LORE_BIND_ADDRESS:-127.0.0.1}:${LORE_PORT:-6011}:6011"

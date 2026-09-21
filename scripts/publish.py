@@ -70,8 +70,8 @@ def publish(api, dist, expected_tag, commit):
     if not re.fullmatch(r'[a-f0-9]{40}', commit):
         raise ValueError('Expected checked-out commit SHA')
     assets = manifest['assets']
-    if len(assets) != 5 or len(set(assets)) != 5:
-        raise ValueError('Expected five distinct release assets')
+    if len(assets) != 4 or len(set(assets)) != 4:
+        raise ValueError('Expected four distinct release assets')
     for name in assets:
         if Path(name).name != name or not name.startswith('lore-'):
             raise ValueError('Unsafe asset name')
@@ -86,7 +86,7 @@ def publish(api, dist, expected_tag, commit):
         release = checked(api.call('POST', '/releases', {
             'tag_name': expected_tag, 'target_commitish': commit, 'name': 'LORE ' + expected_tag,
             'draft': True, 'prerelease': '-' in expected_tag,
-            'body': 'Lite runs in the browser; Full uses a persistent sidecar. This alpha adds grounded LLM extraction, bounded chat collection, budget-checked memory injection, and hierarchical wiki editing with aliases and links. Automation requires installing the included PocketRisu host extension and rebuilding the supported host. Server outbox/proxy and real-device Safari verification remain pending. See README, docs/automation.md and SHA256SUMS.',
+            'body': 'Lite runs in the browser; Full uses a persistent sidecar. This alpha adds grounded LLM extraction, bounded chat collection, budget-checked memory injection, and hierarchical wiki editing with aliases and links. No PocketRisu modifications or rebuilds are required. Lite calls the selected memory LLM directly; Full uses HTTP(S) to its sidecar, which calls the selected provider. Saved history is reconciled at the next request; injection supports legacy OpenAI-compatible text requests using a conservative budget estimate. Server outbox/proxy and real-device Safari verification remain pending. See README, docs/automation.md and SHA256SUMS.',
         }))
     else:
         checked((status, release))

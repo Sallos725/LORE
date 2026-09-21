@@ -28,7 +28,7 @@ def build(tag=None):
         name = f'lore-{edition}-{expected}.js'
         (dist / name).write_bytes(data)
         assets.append(name)
-    common = ['package.json', 'LICENSE', 'README.md', 'run.sh', 'scripts/install-host.py', 'integration/pocketrisu-lore.mjs']
+    common = ['package.json', 'LICENSE', 'README.md', 'run.sh']
     common += [str(p.relative_to(ROOT)) for folder in ('server', 'shared', 'docs') for p in sorted((ROOT / folder).glob('*.m*'))]
     # Include .md documentation, as well as executable .mjs modules.
     common = sorted(set(common))
@@ -42,10 +42,8 @@ def build(tag=None):
             archive.addfile(info, io.BytesIO(data))
     assets.append(server_name)
     full_name = f'lore-full-{expected}.zip'
-    files = common + ['Dockerfile', '.dockerignore', 'docker-compose.yml', '.env.example', 'full/plugin/lore-full.js']
-    host_name = f'lore-pocketrisu-host-{expected}.zip'
-    host_files = ['scripts/install-host.py', 'integration/pocketrisu-lore.mjs', 'docs/automation.md', 'LICENSE']
-    for zip_name, members in [(full_name, files), (host_name, host_files)]:
+    files = common + ['Dockerfile', '.dockerignore', 'docker-compose.yml', 'docker-compose.http.yml', '.env.example', 'full/plugin/lore-full.js']
+    for zip_name, members in [(full_name, files)]:
         with zipfile.ZipFile(dist / zip_name, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
             for name in members:
                 info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))

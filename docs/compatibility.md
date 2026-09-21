@@ -18,7 +18,15 @@
 - `getCurrentCharacterIndex()` 구현은 selectedCharID를 반환하므로 타입 정의의 number와 동일하다고 가정하지 않는다. 배열 인덱스를 영속 식별자로 사용하지 않는다.
 - 호스트에 LORE 전용 인증 프록시, revision 기반 확정 delta/outbox 및 삭제/분기 전달 계약은 확인되지 않았다. 기존 NodeOnly 프로토타입을 근거로 존재한다고 주장하지 않는다.
 
-alpha.2에는 원본 호스트에 없던 `getLoreChatDelta`/`checkLoreBudget`을 추가하는 독립 작성 설치 스크립트를 제공한다. 자동 주입·수집은 이 확장과 일치하는 scope를 요구한다. `Chat.svelte`의 채팅 분기는 새 `chat.id`를 부여한다. 안정된 ID 없이 큰 snapshot으로 우회하지 않는다. [설치 및 제한](automation.md)을 참고한다.
+alpha.3은 호스트 확장 의존성과 설치기를 제거했다. 기존 API만 사용한다.
+
+- `getDatabase(includeOnly)`는 선택하지 않은 키를 snapshot 전에 제외한다. 예산용 maxContext/maxResponse만 읽는다.
+- `getCurrentCharacterIndex()`의 실제 반환은 안정된 selectedCharID 문자열, `getCurrentChatIndex()`는 임시 위치다.
+- `server/node/server.cjs`의 `/api/test_auth`는 기존 HttpOnly 세션 쿠키를 확인하고 짧은 JWT를 반환한다. host nativeFetch의 같은 origin GET을 사용한다. `/api/chat-content/:chaId/:chatIndex`는 인증 후 no-compression RISUSAVE + no-records MessagePack 채팅을 반환한다.
+- `src/ts/process/index.svelte.ts`가 원문 message.chatId를 OpenAIChat.memo에 연결한다. 요청의 이전 확정 anchor를 저장된 chat.id와 함께 검증한다.
+- `globalApi.svelte.ts`의 body interceptor는 JSON 문자열을 받는다. 타입 `openai_basic`/`openai_streaming`일 때 최종 기억을 추가한다. provider별 우회 경로에는 주입하지 않는다.
+- V3 factory는 Response body를 backpressure/cancel 가능한 스트림으로 전달한다. Lite는 1 MiB 제한 후 decode하고 Full은 사이드카에서만 원문을 읽는다. decoder는 공개 MessagePack 형식에 따라 독립 작성했으며 지원하지 않는 압축/extension은 거부한다.
+
 
 ## RisuBard 재사용 판단
 
@@ -39,4 +47,4 @@ alpha.2에는 원본 호스트에 없던 `getLoreChatDelta`/`checkLoreBudget`을
 
 LORE는 코드를 가져오지 않고 같은 사용 의도를 독립 구현했다. 임의의 여러 단계 폴더를 20개씩 탐색하고, 링크가 겹치면 후보를 선택하며, audience를 넘는 링크/역링크 후보는 노출하지 않는다. 제목을 바꿔도 기존 별칭과 ID를 보존한다. 경로 탈출을 거부하고 HTML 실행 없는 미리보기를 사용한다. 문서의 근거 revision이 바뀌면 주입에서 즉시 제외하고, 수동 교정과 LLM 제안의 충돌을 별도로 남긴다.
 
-검증된 것은 설치 스크립트의 고정 커밋 적용과 수정된 V3 TypeScript 구문, delta helper·독립 엔진 자동 테스트 및 모의 V3 호스트에서의 Chromium/WebKit 동작이다. 실제 PocketRisu 전체 프로덕션 빌드/로그인 세션/iPhone에서의 종합 설치 검증과 의미적 기억 품질 평가는 아직 별도다.
+alpha.3 검증은 원본 커밋의 API 소스 계약 확인, 합성 저장 응답/원문·분기/LLM 프로토콜/최종 문자열 요청 테스트, 모의 V3 호스트에서 Chromium/WebKit의 배포용 JS 동작이다. 실제 로그인 호스트의 전체 설치와 iPhone 장시간 검증, 의미적 기억 품질 평가는 별도다. 임시 체크아웃에 남아 있는 alpha.2 패치는 원본 API 증거로 사용하지 않는다.
