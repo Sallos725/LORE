@@ -85,6 +85,7 @@ export class Store {
     requireValue(Array.isArray(event.changes) && event.changes.length > 0 && event.changes.length <= 32, 'Expected 1–32 changes');
     const ids = new Set();
     for (const change of event.changes) {
+      requireValue(change && typeof change === 'object' && !Array.isArray(change), 'Invalid change');
       boundedString(change.id, 'message ID'); revision(change.revision);
       requireValue(change.revision > 0 && !ids.has(change.id), 'Invalid or duplicate message revision'); ids.add(change.id);
       requireValue(['upsert', 'delete'].includes(change.op), 'Invalid change operation');

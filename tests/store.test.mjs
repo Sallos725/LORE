@@ -59,3 +59,21 @@ test('queue recovers after restart and cancellation is persistent', t => {
   const next=s.enqueue(scope,event(1,'next')); s.cancel(scope,next.id); s.runOne();
   assert.equal(s.job(scope,next.id).state,'cancelled'); assert.equal(s.context(scope).text,'');
 });
+test('derivation failure rolls back partial pages and stops after three attempts', t => {
+  const s=memory(t);
+  const job=s.enqueue(scope,{eventId:'failure',baseRevision:0,changes:[
+    {id:'one',revision:1,op:'upsert',visibility:'public',text:'one'},
+    {id:'two',revision:1,op:'upsert',visibility:'public',text:'two'},
+  ]});
+  const save=s.save.bind(s);s.save=(key,page,source)=>{if(source==='two')throw Error('synthetic failure');return save(key,page,source);};
+  for(let attempt=1;attempt<=3;attempt++){s.runOne();assert.equal(s.list(scope).pages.length,0);assert.equal(s.job(scope,job.id).attempts,attempt);}
+  assert.equal(s.job(scope,job.id).state,'failed');assert.equal(s.runOne(),false);assert.equal(s.context(scope).fresh,false);
+  assert.equal(s.source(scope,'one',1).text,'one');
+});
+test('source audience is preserved through event jobs and evidence lookup', t => {
+  const s=memory(t),e={eventId:'secret',baseRevision:0,changes:[{id:'secret',revision:1,op:'upsert',visibility:'Alice',text:'Hidden fact'}]};
+  assert.throws(()=>s.enqueue(scope,e),/Visibility/);s.enqueue(scope,e,'Alice');s.runOne();
+  assert.equal(s.list(scope).pages.length,0);assert.equal(s.context(scope).text,'');
+  assert.match(s.context(scope,{audience:'Alice'}).text,/Hidden fact/);
+  assert.throws(()=>s.source(scope,'secret',1),/not found/);
+});
