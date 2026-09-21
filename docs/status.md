@@ -30,3 +30,12 @@ Gitea 첫 CI는 실패했다. 사용자 승인으로 기존 tea 로그인에서 
 6. 사용자 승인 합성/실대화 평가로 장기 기억의 의미 정확도·현재/과거 상태·인물별 비밀 정책 품질 개선. 지금은 public 또는 단일 audience를 보수적으로 적용한다.
 
 자세한 실행 절차는 [automation.md](automation.md), 소스 근거는 [compatibility.md](compatibility.md)에 있다.
+
+## alpha.2 발행 확인
+
+- [GitHub CI 35597067484](https://github.com/Sallos725/LORE/actions/runs/35597067484) 성공. 브라우저 테스트의 비동기 폴더 선택을 수정한 뒤 재검증했다.
+- [태그 Release 35597337104](https://github.com/Sallos725/LORE/actions/runs/35597337104) 성공. `v0.1.0-alpha.2`는 `0eebbea6ca4d326e76188ccd903ad029f3e3547b`를 가리킨다.
+- [GitHub prerelease](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2)에 Lite/Full JS, Full ZIP, 서버 tar.gz, 호스트 확장 ZIP 및 manifest/checksum 파일 총 7개가 게시됐다. 실제 다운로드의 모든 체크섬과 최종 호스트 helper/installer 일치를 확인했다.
+- `ghcr.io/sallos725/lore:v0.1.0-alpha.2` 발행 성공. Actions에서 원격 manifest의 linux/amd64와 linux/arm64를 검증했다. manifest digest: `sha256:de78ec428dda85b2d60ac99f2246cf857d5b57191b10ee47d87e9404cc3d6a6e`.
+- 태그 실행에서 Node 테스트 30개, Python 테스트 5개, Chromium/WebKit 각각 Lite/Full UI, 패키지 설치 및 격리 컨테이너 데이터 보존 검사가 통과했다.
+- GitHub 저장소의 PRIVATE 설정은 유지했다. Gitea에는 main만 동기화하고 태그를 보내지 않았다.

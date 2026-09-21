@@ -38,3 +38,5 @@ Gitea job token의 패키지 권한은 GitHub와 다르므로 별도 PAT를 사�
 ## 현재 상태
 
 GitHub/Gitea 양쪽 SSH main push가 성공했고 GitHub 최초 CI도 성공했다. Gitea에는 사용자 승인으로 현재 tea 로그인 자격 증명을 RELEASE_TOKEN/REGISTRY_TOKEN/REGISTRY_USERNAME secret으로 등록했다. 첫 Gitea CI 실패 후 사용자 지시로 추가 진단을 보류했다. 릴리스는 GitHub를 우선하며 실제 태그 발행 결과는 Actions와 Releases에서 확인한다. 로컬 산출물 생성과 원격 게시 성공을 구분한다.
+
+2026-09-21: [v0.1.0-alpha.2](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2) 실제 발행과 다운로드 체크섬 검증을 완료했다. 두 아키텍처 GHCR manifest도 Release Actions에서 확인했다. 상세 기록은 [status.md](status.md)에 있다.
