@@ -1,0 +1,21 @@
+services:
+  lore:
+    image: ${LORE_IMAGE:-ghcr.io/sallos725/lore}:${LORE_VERSION:-v0.1.0-alpha.1}
+    build: .
+    environment:
+      LORE_CREDENTIALS_JSON: ${LORE_CREDENTIALS_JSON:?Set scoped credentials in .env}
+    volumes:
+      - lore-data:/data
+    expose:
+      - "6011"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 256m
+    restart: unless-stopped
+    init: true
+volumes:
+  lore-data:
