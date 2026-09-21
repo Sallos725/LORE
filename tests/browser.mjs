@@ -68,9 +68,15 @@ try {
         if(edition==='Full')await page.locator('[data-use-server]').check();
         await page.locator('[data-auto]').click();await page.getByText('자동 기억을 시작했습니다.',{exact:false}).waitFor();
         await page.waitForFunction(async()=>{if(!window.beforeLore)return false;const messages=[{role:'assistant',content:'Alice lives in Seoul.',memo:'browser-m1'},{role:'user',content:'Alice',memo:'new-message'}];const result=await window.beforeLore(messages,'model');return result.some(m=>m.content.includes('lore-memory-'));});
+        if(edition==='Lite'){
+          const saved=page.waitForEvent('download');await page.locator('[data-backup]').click();const backup=await saved;
+          await page.locator('[data-notebook]').fill('restored');await page.locator('[data-start]').click();await page.getByText('현재 채팅에 연결했습니다.',{exact:true}).waitFor();
+          await page.locator('[data-restore]').setInputFiles(await backup.path());await page.getByText('복원했습니다.',{exact:false}).waitFor();
+          await page.locator('[data-search]').fill('Alice');await page.locator('[data-find]').click();await page.locator('.list button').filter({hasText:'Alice'}).waitFor();
+        }
         await page.locator('[data-close]').click();assert.equal(await page.locator('.lore').count(),0);
-        for(let i=0;i<5;i++){await page.evaluate(()=>window.openLore());await page.locator('[data-close]').click();}
-        await page.evaluate(()=>window.disposeLore());assert.equal(await page.evaluate(()=>window.registrations.size),0);assert.equal(await page.evaluate(()=>window.beforeLore),null);assert.equal(await page.evaluate(()=>window.finalLore),null);
+        for(let i=0;i<5;i++){await page.evaluate(()=>window.openLore());assert.equal(await page.locator('[data-model]').inputValue(),'fixture');await page.locator('[data-close]').click();}
+        await page.evaluate(()=>window.disposeLore());assert.equal(await page.evaluate(()=>window.registrations.size),0);assert.equal(await page.evaluate(()=>window.beforeLore),null);assert.equal(await page.evaluate(()=>window.finalLore??null),null);
         assert.equal(await page.evaluate(()=>window.forbiddenCalls),0);assert.deepEqual(errors,[]);
         await page.close();console.log(`PASS ${name} ${edition}: create/read/update, folders, aliases, context, escaping, export, auto extraction/injection and unload`);
       }

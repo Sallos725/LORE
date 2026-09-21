@@ -1,3 +1,4 @@
+import {installBackup} from './backup.mjs';
 import {validateDelta,sameCursor} from '../shared/sync.mjs';
 import {validateExtraction} from '../shared/extraction.mjs';
 import {aliasesOf,wikiPath,pageDefaults,resolveLink,linkTargets,browsePages,scorePage} from '../shared/wiki.mjs';
@@ -127,3 +128,5 @@ export class LiteStore {
   async links(id){const page=await this.page(id),meta=await this.index(),backlinks=[];for(const row of meta){const p=await this.page(row.id);if(linkTargets(p.body).some(t=>{const r=resolveLink(t,meta);return r.status==='resolved'&&r.candidates[0].id===id;}))backlinks.push({id:p.id,title:p.title,path:p.path});}return {outgoing:linkTargets(page.body).map(target=>({target,...resolveLink(target,meta)})),backlinks};}
   close() {}
 }
+
+installBackup(LiteStore);

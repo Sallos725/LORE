@@ -17,7 +17,8 @@ export async function install(host,edition) {
   }};
   const open=async()=>{
     if(!alive)return;ui?.close();
-    ui=openUI({edition,host,connect:getStore,automation});
+    const settingsStorage=await host.getLocalPluginStorage(),settingsKey='lore:settings:'+edition;
+    ui=openUI({edition,host,connect:getStore,automation,preferences:await settingsStorage.getItem(settingsKey)??{},savePreferences:value=>settingsStorage.setItem(settingsKey,value)});
     await host.showContainer('fullscreen');
   };
   const dispose=async()=>{alive=false;await automation.stop();notebooks.clear();ui?.close();ui=null;for(const id of registrations)await host.unregisterUIPart?.(id);registrations.length=0;await host.hideContainer?.();};

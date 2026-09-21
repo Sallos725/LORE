@@ -311,6 +311,65 @@ function createExtractor(config,fetcher=fetch) {
   };
 }
 
+const BACKUP_BYTES=16*1024*1024;
+function installBackup(LiteStore){
+ LiteStore.prototype.exportBackup=function(){return this.serial(async()=>{
+  const state=await this.state(),records={},keys=new Set();
+  for(const p of state.pages)for(let r=p.revision;r>Math.max(0,p.revision-5);r--)keys.add(`${this.prefix}page:${p.id}:${r}`);
+  for(const s of state.sources??[])keys.add(s.key);for(const key of state.conflicts??[])keys.add(key);
+  for(const key of keys){const value=await this.storage.getItem(key);if(value!==undefined&&value!==null)records[key.slice(this.prefix.length)]=value;}
+  const result={format:'lore-lite-backup',version:1,prefix:this.prefix,state,records};
+  requireValue(new TextEncoder().encode(JSON.stringify(result)).length<=BACKUP_BYTES,'Backup exceeds 16 MiB');return result;
+ });};
+ LiteStore.prototype.importBackup=function(backup){return this.serial(async()=>{
+  requireValue(!this.processing,'추출을 중지하고 진행 중인 작업이 끝난 뒤 복원하세요.');
+  const current=await this.state();requireValue(!current.pages.length&&!current.sources?.length&&!current.jobs?.length,'빈 노트북에만 복원할 수 있습니다.',409);
+  requireValue(backup?.format==='lore-lite-backup'&&backup.version===1,'지원하지 않는 백업 형식');
+  requireValue(new TextEncoder().encode(JSON.stringify(backup)).length<=BACKUP_BYTES,'Backup exceeds 16 MiB');
+  const oldPrefix=boundedString(backup.prefix,'backup prefix',200),state=backup.state,records=backup.records;
+  requireValue(state&&records&&typeof records==='object'&&!Array.isArray(records),'Invalid backup');
+  requireValue(Array.isArray(state.pages)&&state.pages.length<=128&&Object.keys(records).length<=800,'Invalid backup size');
+  const allowed=new Map(),pages=[],ids=new Set(),paths=new Set();
+  for(const row of state.pages){
+   const id=boundedString(row.id,'page ID');revision(row.revision);requireValue(row.revision>0&&!ids.has(id),'Invalid page revision or duplicate');ids.add(id);
+   for(let r=row.revision;r>Math.max(0,row.revision-5);r--){
+    const key=`page:${id}:${r}`,value=records[key];if(!value){requireValue(r!==row.revision,'Missing current page');continue;}
+    const normalized={...pageDefaults(value),...validatePage(value),aliases:aliasesOf(value.aliases,value.title),path:wikiPath(value.path)};
+    requireValue(normalized.id===id&&normalized.revision===r&&normalized.visibility==='public'&&typeof normalized.active==='boolean'&&['manual','llm','source-quote'].includes(normalized.origin),'Invalid page');
+    requireValue(Array.isArray(normalized.evidence)&&normalized.evidence.length<=32,'Invalid evidence');
+    for(const e of normalized.evidence){boundedString(e.messageId,'evidence ID');revision(e.revision);boundedString(e.quote,'quote',16384);}
+    allowed.set(key,normalized);
+    if(r===row.revision){requireValue(!paths.has(normalized.path),'Duplicate path');paths.add(normalized.path);const {body,evidence,...meta}=normalized;pages.push(meta);}
+   }
+  }
+  let scope;
+  if(state.scope){scope={};for(const k of ['characterId','chatId','branchId'])scope[k]=boundedString(state.scope[k],k);}
+  if(current.scope)requireValue(JSON.stringify(current.scope)===JSON.stringify(scope),'백업이 다른 채팅에 연결되어 있습니다.',409);
+  const sources=[],sourceKeys=new Set(),sourceIds=new Set();
+  requireValue(Array.isArray(state.sources??[])&&(state.sources??[]).length<=128,'Invalid sources');
+  const relative=(key,kind)=>{requireValue(typeof key==='string'&&key.startsWith(oldPrefix+kind+':')&&key.length<=oldPrefix.length+200,'Invalid backup key');return key.slice(oldPrefix.length);};
+  for(const ref of state.sources??[]){
+   const key=relative(ref.key,'source'),value=records[key];requireValue(value&&value.id===ref.id&&value.revision===ref.revision&&!sourceIds.has(ref.id),'Invalid source');
+   boundedString(value.id,'source ID');revision(value.revision);requireValue(value.revision>0&&value.visibility==='public'&&['user','assistant'].includes(value.role),'Invalid source');boundedString(value.text,'source text',16384);
+   sourceIds.add(ref.id);sourceKeys.add(key);allowed.set(key,value);sources.push({id:ref.id,revision:ref.revision,key:this.prefix+key});
+  }
+  requireValue(Array.isArray(state.jobs??[])&&(state.jobs??[]).length<=20,'Invalid jobs');
+  const jobIds=new Set(),jobs=(state.jobs??[]).map(j=>{
+   boundedString(j.id,'job ID');requireValue(!jobIds.has(j.id)&&['queued','running','completed','failed','cancelled'].includes(j.state)&&Number.isInteger(j.attempts)&&j.attempts>=0&&j.attempts<=3&&Array.isArray(j.keys)&&j.keys.length<=32,'Invalid job');jobIds.add(j.id);
+   const keys=j.keys.map(k=>{const key=relative(k,'source');requireValue(sourceKeys.has(key),'Missing job source');return this.prefix+key;});
+   return {id:j.id,state:j.state==='running'?'queued':j.state,attempts:j.attempts,keys,...(j.error?{error:boundedString(j.error,'job error',500)}:{})};
+  });
+  requireValue(Array.isArray(state.conflicts??[])&&(state.conflicts??[]).length<=32,'Invalid conflicts');
+  const conflicts=(state.conflicts??[]).map(k=>{const key=relative(k,'conflict'),value=records[key];requireValue(value?.proposal,'Missing conflict');validatePage(value.proposal);allowed.set(key,value);return this.prefix+key;});
+  const cursor=state.cursor??null;if(cursor)requireValue(Number.isSafeInteger(cursor.count)&&cursor.count>=0&&cursor.count<=128&&/^[a-f0-9]{64}$/.test(cursor.digest),'Invalid cursor');
+  requireValue(!sources.length||scope,'Missing source scope');
+  // Validate first, then publish the index last. Failure leaves the empty target usable.
+  for(const [key,value] of allowed)await this.storage.setItem(this.prefix+key,value);
+  await this.storage.setItem(this.prefix+'index',{pages,...(scope?{scope}:{}),sources,jobs,conflicts,cursor});
+  return {pages:pages.length,sources:sources.length};
+ });};
+}
+
 class LiteStore {
   constructor(storage, notebook = 'default') {
     this.storage=storage; this.prefix=`lore:lite:v1:${boundedString(notebook,'notebook')}:`; this.writes=Promise.resolve();
@@ -437,6 +496,8 @@ class LiteStore {
   close() {}
 }
 
+installBackup(LiteStore);
+
 function connectionURL(value) {
   const url=new URL(value);
   requireValue(['https:','http:'].includes(url.protocol), 'Full URL은 HTTP 또는 HTTPS를 사용하세요.');
@@ -500,7 +561,7 @@ function renderWiki(element,body,navigate){
     if(!text)node.append(document.createElement('br'));element.append(node);
   }
 }
-function openUI({edition,host,connect,automation,onClose}) {
+function openUI({edition,host,connect,automation,preferences={},savePreferences=async()=>{},onClose}) {
   let alive=true,store=null,page=null,offset=0,working=false,folder='',tree=false,connectionOptions=null;
   const controller=new AbortController(),root=document.createElement('section');root.setAttribute('aria-label',`LORE ${edition}`);
   root.innerHTML=`<style>
@@ -523,7 +584,7 @@ function openUI({edition,host,connect,automation,onClose}) {
   <div class="tools"><button data-auto>자동 기억 시작</button><button data-jobs>상태 · 작업 · 충돌 새로고침</button></div><pre data-auto-status></pre><div data-job-list></div><div data-conflicts></div></details>
   <label>위키 검색<input data-search maxlength="200" placeholder="${edition==='Lite'?'제목 · 별칭 · 경로':'제목 · 별칭 · 경로 · 본문'}"></label>
   <div class="tools"><button data-find>검색</button><button data-tree>폴더 탐색</button><button data-up>상위 폴더</button><button data-new>새 문서</button><button data-prev>이전</button><button data-next>다음</button><button data-context>컨텍스트 미리보기</button></div>
-  <small data-folder></small><div class="list"></div><div data-editor hidden>
+  ${edition==='Lite'?'<div class="tools"><button data-backup>노트북 전체 백업</button><label>빈 노트북에 복원<input data-restore type="file" accept=".json,application/json"></label></div>':''}<small data-folder></small><div class="list"></div><div data-editor hidden>
   <label>제목<input data-title maxlength="160"></label><label>문서 경로<input data-path maxlength="240" placeholder="인물/동료/캐릭터1.md"></label>
   <label>별칭 (쉼표로 구분)<input data-aliases maxlength="5152" placeholder="캐릭터1, 다른 이름, 애칭"></label>
   <label>종류<select data-kind><option value="person">인물</option><option value="event">사건</option><option value="scene">현재 장면</option><option value="location">장소</option><option value="faction">집단</option><option value="item">물건</option><option value="concept">개념</option><option value="note">메모</option></select></label>
@@ -571,6 +632,10 @@ function openUI({edition,host,connect,automation,onClose}) {
   action('[data-context]',async()=>{const result=await store.context({query:$('[data-search]').value,budgetBytes:Number($('[data-budget]').value)});if(!alive)return;$('[data-preview]').textContent=result.text+'\n'+result.excluded.map(p=>`${p.id}: ${p.reason}`).join('\n');say(`${result.usedBytes}/${result.budgetBytes} bytes · 포함 ${result.included.length} · 제외 ${result.excluded.length}${result.requiredOverflow?' · 필수 기억 초과: 전체 주입 생략':''}${result.fresh?'':' · 미완료/실패 작업 있음'}${result.candidateLimitReached?' · 후보 한도 도달':''}`);});
   const urls=new Set();
   action('[data-export]',()=>{if(!page)return;const url=URL.createObjectURL(new Blob([markdownExport(page)],{type:'text/markdown;charset=utf-8'}));urls.add(url);const a=document.createElement('a');a.href=url;a.download=page.path?.split('/').at(-1)??'lore.md';root.append(a);a.click();a.remove();URL.revokeObjectURL(url);urls.delete(url);});
+  if(edition==='Lite'){
+   action('[data-backup]',async()=>{const backup=await store.exportBackup();if(!alive)return;const url=URL.createObjectURL(new Blob([JSON.stringify(backup)],{type:'application/json'}));urls.add(url);const a=document.createElement('a');a.href=url;a.download='lore-notebook.json';root.append(a);a.click();a.remove();URL.revokeObjectURL(url);urls.delete(url);say('문서·이력·근거·작업을 백업했습니다.');});
+   $('[data-restore]').onchange=()=>run(async()=>{const file=$('[data-restore]').files[0];if(!file)return;if(file.size>16*1024*1024)throw Error('백업은 16 MiB까지 지원합니다.');await automation.stop();const result=await store.importBackup(JSON.parse(await file.text()));await list();say(`${result.pages}개 문서와 ${result.sources}개 원문을 복원했습니다.`);});
+  }
   const connection=$('[data-connect]');
   if(edition==='Full')connection.innerHTML='<label>Full 서버 URL<input data-url type="url" placeholder="https://lore.example.com"></label><button data-start>연결</button><small>PocketRisu 로그인과 현재 채팅을 자동으로 사용합니다. 별도 토큰이나 ID 입력은 필요 없습니다.</small>';
   else{connection.innerHTML='<label>노트북 ID<input data-notebook value="default" maxlength="160"></label><button data-start>노트북 열기</button><small>자동 기억 시작 시 현재 채팅에 연결됩니다. 다른 채팅은 다른 노트북을 사용하세요.</small>';}
@@ -580,8 +645,11 @@ function openUI({edition,host,connect,automation,onClose}) {
   $('[data-provider]').addEventListener('change',()=>{$('[data-llm-url]').value=PROVIDERS[$('[data-provider]').value].url;},{signal:controller.signal});
   if(edition==='Full'){const toggle=()=>{$('[data-provider-fields]').hidden=$('[data-use-server]').checked;};$('[data-use-server]').addEventListener('change',toggle,{signal:controller.signal});toggle();}
 
-  action('[data-start]',async()=>{store?.close();workspace.hidden=true;page=null;offset=0;tree=false;$('[data-editor]').hidden=true;$('[data-preview]').textContent='';connectionOptions=edition==='Full'?{url:$('[data-url]').value}:{notebook:$('[data-notebook]').value};store=await connect(connectionOptions);const identity=await store.identity();if(edition==='Full'&&!identity.extractionEnabled){$('[data-use-server]').checked=false;$('[data-provider-fields]').hidden=false;}if(!alive){store.close();return;}workspace.hidden=false;const visibility=$('[data-visibility]');visibility.replaceChildren();for(const value of new Set(identity.audience==='world'?['public']:['public',identity.audience])){const option=document.createElement('option');option.value=value;option.textContent=value;visibility.append(option);}await list();say('현재 채팅에 연결했습니다.');$('[data-auto-status]').textContent=automation?.status().message??'자동 기억 꺼짐';});
-  action('[data-auto]',async()=>{await automation.start({...connectionOptions,injectionMode:$('[data-injection-mode]').value,memoryBudget:Number($('[data-memory-budget]').value),llm:edition==='Lite'||!$('[data-use-server]').checked?{provider:$('[data-provider]').value,url:$('[data-llm-url]').value,model:$('[data-model]').value,apiKey:$('[data-api-key]').value,jsonMode:$('[data-json-mode]').checked}:undefined});if(alive){$('[data-auto-status]').textContent=automation.status().message;say('자동 기억을 시작했습니다. 창을 닫아도 현재 탭에서는 계속 동작합니다.');}});
+  const preferenceFields=['url','notebook','provider','llm-url','model','json-mode','memory-budget','injection-mode'];
+  for(const key of preferenceFields){const input=$(`[data-${key}]`);if(input&&preferences[key]!==undefined){if(input.type==='checkbox')input.checked=preferences[key]===true;else input.value=preferences[key];}}
+  async function remember(){const value={};for(const key of preferenceFields){const input=$(`[data-${key}]`);if(input)value[key]=input.type==='checkbox'?input.checked:input.value;}await savePreferences(value);}
+  action('[data-start]',async()=>{store?.close();workspace.hidden=true;page=null;offset=0;tree=false;$('[data-editor]').hidden=true;$('[data-preview]').textContent='';connectionOptions=edition==='Full'?{url:$('[data-url]').value}:{notebook:$('[data-notebook]').value};store=await connect(connectionOptions);await remember();const identity=await store.identity();if(edition==='Full'&&!identity.extractionEnabled){$('[data-use-server]').checked=false;$('[data-provider-fields]').hidden=false;}if(!alive){store.close();return;}workspace.hidden=false;const visibility=$('[data-visibility]');visibility.replaceChildren();for(const value of new Set(identity.audience==='world'?['public']:['public',identity.audience])){const option=document.createElement('option');option.value=value;option.textContent=value;visibility.append(option);}await list();say('현재 채팅에 연결했습니다.');$('[data-auto-status]').textContent=automation?.status().message??'자동 기억 꺼짐';});
+  action('[data-auto]',async()=>{await remember();await automation.start({...connectionOptions,injectionMode:$('[data-injection-mode]').value,memoryBudget:Number($('[data-memory-budget]').value),llm:edition==='Lite'||!$('[data-use-server]').checked?{provider:$('[data-provider]').value,url:$('[data-llm-url]').value,model:$('[data-model]').value,apiKey:$('[data-api-key]').value,jsonMode:$('[data-json-mode]').checked}:undefined});if(alive){$('[data-auto-status]').textContent=automation.status().message;say('자동 기억을 시작했습니다. 창을 닫아도 현재 탭에서는 계속 동작합니다.');}});
   action('[data-host-scope]',async()=>say('현재 채팅 ID: '+JSON.stringify(await automation.scope(edition==='Full'?{url:$('[data-url]').value}:{notebook:$('[data-notebook]').value}))));
   action('[data-stop]',async()=>{await automation.stop();if(alive)$('[data-auto-status]').textContent=automation.status().message;});
   action('[data-jobs]',async()=>{const jobs=await store.jobs(),conflicts=await store.conflicts();if(!alive)return;$('[data-auto-status]').textContent=JSON.stringify(automation.status(),null,2);const list=$('[data-job-list]');list.replaceChildren();for(const j of jobs){const row=document.createElement('div');row.textContent=`${j.state} · 시도 ${j.attempts} ${j.error??''} `;if(['queued','running','failed'].includes(j.state)){const button=document.createElement('button');button.textContent='취소';button.onclick=()=>run(async()=>{await store.cancel(j.id);say('작업을 취소했습니다.');});row.append(button);}if(['failed','cancelled'].includes(j.state)){const retry=document.createElement('button');retry.textContent='재시도';retry.onclick=()=>run(async()=>{await store.retry(j.id);say('작업을 다시 대기열에 넣었습니다.');});row.append(retry);}list.append(row);}const out=$('[data-conflicts]');out.replaceChildren();for(const c of conflicts){const detail=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='교정과 충돌: '+c.proposal.title;pre.textContent=JSON.stringify(c.proposal,null,2);const dismiss=document.createElement('button');dismiss.textContent='검토 완료 · 제안 제거';dismiss.onclick=()=>run(async()=>{await store.dismissConflict(c.id);detail.remove();});detail.append(summary,pre,dismiss);out.append(detail);}});
@@ -726,7 +794,8 @@ async function install(host,edition) {
   }};
   const open=async()=>{
     if(!alive)return;ui?.close();
-    ui=openUI({edition,host,connect:getStore,automation});
+    const settingsStorage=await host.getLocalPluginStorage(),settingsKey='lore:settings:'+edition;
+    ui=openUI({edition,host,connect:getStore,automation,preferences:await settingsStorage.getItem(settingsKey)??{},savePreferences:value=>settingsStorage.setItem(settingsKey,value)});
     await host.showContainer('fullscreen');
   };
   const dispose=async()=>{alive=false;await automation.stop();notebooks.clear();ui?.close();ui=null;for(const id of registrations)await host.unregisterUIPart?.(id);registrations.length=0;await host.hideContainer?.();};
