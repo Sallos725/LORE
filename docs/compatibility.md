@@ -18,7 +18,7 @@
 - `getCurrentCharacterIndex()` 구현은 selectedCharID를 반환하므로 타입 정의의 number와 동일하다고 가정하지 않는다. 배열 인덱스를 영속 식별자로 사용하지 않는다.
 - 호스트에 LORE 전용 인증 프록시, revision 기반 확정 delta/outbox 및 삭제/분기 전달 계약은 확인되지 않았다. 기존 NodeOnly 프로토타입을 근거로 존재한다고 주장하지 않는다.
 
-초기 플러그인은 수동 위키와 컨텍스트 미리보기/복사만 제공한다. 자동 주입·대화 수집·LLM 사실 추출은 후속 연결 작업이다. 이 경계는 잘못된 채팅이나 분기로 기억을 주입하는 것을 방지한다.
+alpha.2에는 원본 호스트에 없던 `getLoreChatDelta`/`checkLoreBudget`을 추가하는 독립 작성 설치 스크립트를 제공한다. 자동 주입·수집은 이 확장과 일치하는 scope를 요구한다. `Chat.svelte`의 채팅 분기는 새 `chat.id`를 부여한다. 안정된 ID 없이 큰 snapshot으로 우회하지 않는다. [설치 및 제한](automation.md)을 참고한다.
 
 ## RisuBard 재사용 판단
 
@@ -27,3 +27,16 @@
 ## 검증 수준
 
 소스 검토 및 합성 데이터 테스트 대상이다. 실제 PocketRisu 설치/모바일 Safari에서 동작 확인한 버전 목록을 뜻하지 않는다. 서버 이벤트 연결에는 저장 트랜잭션과 함께 기록하는 outbox, 안정된 message ID/revision, 수정/삭제/분기 및 재접속 재조정이 필요하다.
+
+## RisuBard 위키 재확인과 개선 (alpha.2)
+
+같은 upstream 커밋에서 다음 구현을 다시 확인했다. 로컬 참조 체크아웃의 origin/main과 대상 SHA가 일치했다.
+
+- [wikiLink.ts](https://github.com/rpaddict/RisuBard/blob/92ad4e292355543817100058bbc547602f4bad75/src/ts/risubard/wikiLink.ts): NFKC 이름 정규화, 별칭 조회, 모호한 링크 거부, 코드 영역을 제외하는 파싱.
+- [wikiFileTree.ts](https://github.com/rpaddict/RisuBard/blob/92ad4e292355543817100058bbc547602f4bad75/src/ts/risubard/wikiFileTree.ts): 경로를 폴더로 묶는 탐색 구성.
+- [risubard-markdown-wiki.ts](https://github.com/rpaddict/RisuBard/blob/92ad4e292355543817100058bbc547602f4bad75/server/node/risubard-markdown-wiki.ts): stable ID, relativePath, aliases, frontmatter, 변경 이력, context mode와 근거.
+- [RisuBardWikiEditor.svelte](https://github.com/rpaddict/RisuBard/blob/92ad4e292355543817100058bbc547602f4bad75/src/lib/Others/RisuBardWikiEditor.svelte): 문서 편집과 쉼표로 구분하는 별칭 입력.
+
+LORE는 코드를 가져오지 않고 같은 사용 의도를 독립 구현했다. 임의의 여러 단계 폴더를 20개씩 탐색하고, 링크가 겹치면 후보를 선택하며, audience를 넘는 링크/역링크 후보는 노출하지 않는다. 제목을 바꿔도 기존 별칭과 ID를 보존한다. 경로 탈출을 거부하고 HTML 실행 없는 미리보기를 사용한다. 문서의 근거 revision이 바뀌면 주입에서 즉시 제외하고, 수동 교정과 LLM 제안의 충돌을 별도로 남긴다.
+
+검증된 것은 설치 스크립트의 고정 커밋 적용과 수정된 V3 TypeScript 구문, delta helper·독립 엔진 자동 테스트 및 모의 V3 호스트에서의 Chromium/WebKit 동작이다. 실제 PocketRisu 전체 프로덕션 빌드/로그인 세션/iPhone에서의 종합 설치 검증과 의미적 기억 품질 평가는 아직 별도다.

@@ -1,21 +1,42 @@
-# Full API v1
+# Full API v1 — alpha.2
 
-`GET /health` 외의 모든 요청은 `Authorization: Bearer <scope-token>`이 필요하다. 토큰은 credentials의 installation/user/character/chat/branch와 audience에 고정되며 요청 JSON의 scope/audience 재정의는 거부한다. 두 사용자가 같은 scope를 공유하도록 잘못 구성하지 않는다.
+`GET /health` 외에는 `Authorization: Bearer <scope-token>`이 필요하다. credentials가 installation/user/character/chat/branch 및 audience를 고정한다. 요청 JSON으로 scope/audience를 재정의할 수 없다. 자동 브라우저 수집은 `collect:true`, 서버가 임의 source revision 이벤트를 전달하는 통합은 `ingest:true`다.
 
 | 경로 | 기능 |
 |---|---|
-| GET /identity | 고정된 scope/audience, scopeRevision |
-| GET /wiki?q=&offset=0&limit=20 | 제목·본문 검색, metadata만 반환, 최대 128개 |
-| GET /wiki/:id | 본문·origin·evidence |
-| PATCH /wiki/:id | `{expectedRevision:0,page:{title,kind,body,visibility:"public",pinned:true}}` 생성/교정 |
-| GET /wiki/:id/history?offset=0 | 최신 revision부터 20개. 이전 버전 내용을 PATCH하면 새 revision으로 복원 가능 |
-| POST /context | `{query:"",budgetBytes:4096}`; 포함 evidence, 예산 제외 이유, freshness |
-| POST /events | ingest credential 전용. 확정 원문 변경과 영속 작업 수락 |
-| GET /jobs/:id | ingest credential 전용 작업 상태 |
-| POST /jobs/:id/cancel | 아직 queued인 파생 작업 취소. 수락된 원문 변경은 되돌리지 않음 |
-| GET /sources/:messageId/:revision | 해당 revision 원문. 삭제 전 원문도 보존하므로 개인정보 완전 삭제 API가 아님 |
+| GET /identity | 고정 scope/audience, scopeRevision, extractionEnabled, collectionEnabled |
+| GET /wiki?q=&offset=0&limit=20 | 제목·별칭·경로·본문 검색, 유효 metadata만, 최대 128개 |
+| GET /browse?folder=&offset=0 | 해당 폴더의 하위 폴더·문서 20개; 무효 문서도 교정 검토용으로 표시 |
+| GET /resolve?target= | 제목/경로/별칭/id:ID 조회; resolved/ambiguous/missing, 후보 최대 20개 |
+| GET /wiki/:id | 본문, origin, evidence, aliases, path, active, contextMode |
+| PATCH /wiki/:id | `{expectedRevision,page:{title,kind,body,aliases,path,visibility,pinned,contextMode}}` |
+| GET /wiki/:id/links | 접근 가능한 outgoing 링크와 역링크 최대 100개 |
+| GET /wiki/:id/history?offset=0 | 최신순 5개; 과거 내용을 PATCH하면 새 revision으로 교정 가능 |
+| POST /context | `{query:"",budgetBytes:4096}`; 근거, 제외 사유, pendingJobs/fresh, requiredOverflow |
+| GET /sync | collect 또는 ingest 권한, 수락된 cursor |
+| POST /sync | 호스트 delta 수락, cursor 비교/중복 방지, 원문·작업·cursor 원자 기록 |
+| POST /events | ingest 전용, source revision 기반 upsert/delete |
+| GET /jobs | audience 범위의 최근 작업 최대 20개 |
+| GET /jobs/:id | collect/ingest 권한, 최근 작업 상태 |
+| POST /jobs/:id/cancel | queued/running 취소; 수락한 원문은 되돌리지 않음 |
+| POST /jobs/:id/retry | failed/cancelled 재시도. 무효 원문 작업은 다시 검증 후 취소됨 |
+| GET /conflicts | 최근 제안 최대 10개, audience 필터 적용 |
+| DELETE /conflicts/:id | 접근 가능한 제안 제거; 문서 자체는 바꾸지 않음 |
+| GET /sources/:messageId/:revision | 해당 revision 원문. 삭제 전 원문도 보존하므로 완전 삭제 API가 아님 |
 
-최대 요청 128 KiB, 원문/본문 각각 16 KiB, 이벤트당 변경 32개, pending 작업 1,000개, 동시 API 처리 16개. 오류 400/401/403/404/409/413/415/503. 409는 최신 상태를 조회하고 새 이벤트 ID/revision으로 재조정한다. 같은 eventId의 동일 JSON 재전송만 멱등 수락한다.
+## 문서와 컨텍스트
+
+`kind`: person/event/scene/location/faction/item/concept/note. `path`: 최대 8단계 상대 `.md`, traversal 거부. aliases는 배열 또는 쉼표 문자열, 최대 32개이며 Unicode 정규화로 중복 제거한다. contextMode는 auto/always/never다. 수동 수정은 기존 title을 별칭에 보존하고 자동 작업이 덮어쓰지 않는다. 근거가 무효화된 수동 교정은 제외 상태를 유지한다. 무관한 새 메모는 새 ID로 만든다.
+
+컨텍스트는 UTF-8 byte 예산이다. 필수 문서가 넘으면 빈 text와 requiredOverflow를 반환한다. 실제 토큰/전체 프롬프트 검증은 플러그인의 호스트 연결에서 별도로 수행한다. 원문은 그대로지만 아직 실패/취소한 작업은 pending/fresh 상태에 반영한다. source-quote는 읽기 전용 인용이며 LLM 요약과 다르다.
+
+## 수집
+
+POST /sync는 `integration/pocketrisu-lore.mjs`의 결과를 받는다. characterId/chatId/branchId, 이전 cursor, 새 cursor `{count,digest}`, reset, messages `[{id,text,role}]`, hasMore를 포함한다. host의 count는 식별자가 아닌 위치·hash 검증용이다. count는 한 번에 최대 32 위치, 텍스트 합계 60,000 UTF-8 bytes다. scope가 다른 요청은 거부한다. reset은 scope 내 모든 기존 원문에 접근 가능한 audience만 수행한다.
+
+기존 prefix가 달라지면 근거 기반 문서를 무효화하고 원문을 처음부터 다시 수집한다. 각 안정된 메시지 ID의 revision을 증가시킨다. 이전 작업은 취소되며 늦은 결과는 적용되지 않는다. 새 분기는 별도 chat/branch scope로 시작하고 토큰 범위를 자동 변경하지 않는다.
+
+## 서버 이벤트
 
 ```json
 {
@@ -27,10 +48,10 @@
 }
 ```
 
-삭제는 동일 id에 더 큰 revision과 `op:"delete"`, visibility를 보낸다. 수정/재생성은 동일 id + 큰 revision의 upsert다. 새 분기는 별도 branchId scope로 시작하며 이력은 자동 복제하지 않는다. 표시 이름/배열 인덱스를 영속 ID로 넣지 않는다. 공개 여부를 추측하지 말고 호스트가 검증한 visibility를 전달한다. private visibility는 해당 audience와 같은 토큰으로만 읽거나 쓸 수 있다.
+삭제는 같은 id에 더 큰 revision과 op:delete, visibility를 보낸다. 수정/재생성은 더 큰 revision의 upsert다. 같은 eventId와 같은 payload만 멱등 수락한다. 표시 이름이나 배열 인덱스를 ID로 사용하지 않는다. public 또는 credential audience만 읽고 쓸 수 있다.
 
-source-quote 페이지는 원문 검증용 읽기 전용이며 직접 PATCH하지 않는다. 수동 페이지는 별도 id로 저장하며 자동 갱신 대상이 아니다. 원문 revision은 SQLite source_versions에 남아 evidence endpoint로 조회한다. 원문 인용이 자동 인물·사건 추출과 동등하다고 해석하지 않는다.
+요청 128 KiB, 원문/본문 16 KiB, 이벤트당 32개 변경, 대기 작업 1,000개, 동시 API 16개를 제한한다. 오류는 400/401/403/404/409/413/415/503. 409는 최신 cursor 또는 revision을 다시 조회하고 재조정한다.
 
-LLM 호출이 없는 결정적 작업만 수행하므로 현재 실행 시간은 이벤트 크기로 제한한다. LLM 단계 추가 시 별도 timeout/cancellation 및 출력 스키마 검증이 필요하다. retry 실패 시 원자적 트랜잭션을 롤백하고 원문 내용 없는 오류만 보관한다.
+모델을 설정하면 영속 LLM worker가 처리한다. 출력 최대 64 KiB, 제안 최대 8개, 근거 최대 32개/문서다. 기본 timeout 45초, 최대 120초와 3회 시도 후 실패 상태를 적용한다. 서버에 API 키나 원문 전체를 오류 로그로 출력하지 않는다. 모델 미설정 events는 원문 인용 엔진을 사용하고 자동 시작은 모델이 없으면 거부한다.
 
-후속 PocketRisu 서버 연결은 인증/활성 세션 검증 → 채팅 저장과 원자적 outbox 기록 → 확정 delta 전달 → idempotent replay 순서로 구현해야 한다. UI에 ingest token을 배포하거나 afterRequest를 확정 이벤트로 사용하지 않는다.
+PocketRisu 저장 트랜잭션 outbox 및 인증 프록시는 후속 연결이다. direct bearer API를 호스트 서버의 활성 세션 검증과 혼동하지 않는다.

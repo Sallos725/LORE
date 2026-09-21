@@ -1,13 +1,14 @@
-# 초기 설계 결정
+# 설계 결정
 
-- Lite: 별도 LORE 서버가 없는 V3 플러그인. 기기 로컬 저장소, 문서별 키, 최대 128개 문서. 수동 위키만 지원하며 서버 작업 복구를 제공하지 않는다.
-- Full: 같은 경량 UI + Node.js 22.23 이상 사이드카. 내장 `node:sqlite` 사용(22 계열에서는 experimental 경고가 있음). 외부 npm 런타임 의존성을 두지 않고 단일 프로세스로 운영한다.
-- SQLite가 Full 정본이다. Markdown은 문서 내보내기 형식이며 편집 원본 DB와 이중 동기화하지 않는다.
-- scope는 installation/user/character/chat/branch의 안정된 ID 조합이다. Full 토큰은 서버 구성의 한 scope에 고정한다. 클라이언트는 scope를 바꿀 수 없다.
-- 초기 Full 연결은 명시적 URL + scope별 bearer token의 독립 연결이다. Docker는 포트를 공개하지 않는다. 별도 인증 TLS 프록시를 운영자가 준비해야 원격에서 접근 가능하다. PocketRisu 활성 세션 검증은 아직 연결하지 않았으며 이 배포를 호스트 통합이라고 부르지 않는다.
-- 이벤트는 확정 원문 upsert/delete와 baseRevision을 받는다. scope revision을 원자적으로 올리고 무효 근거를 즉시 검색에서 제외한다. 작업 큐는 파생 quote 페이지를 만든다. quote는 요약이나 LLM 추론이 아니며 페이지의 origin으로 구분한다.
-- 첫 엔진은 LLM을 호출하지 않는다. 원문과 사용자 메모의 검색, revision, 증거 및 복구를 먼저 검증한다. 인물별 지식은 public 또는 특정 audience로 필터링한다. 인물/사건/장면 페이지 종류를 지원한다.
-- 수정된 원문, 늦은 작업, pinned/manual 페이지는 자동 처리로 덮어쓰지 않는다. 별도 분기는 빈 상태에서 시작하며 암묵적 복제를 하지 않는다.
-- 컨텍스트는 UTF-8 byte 상한으로 보수적으로 제한한다. 정확한 모델 토큰 수나 전체 요청 예산 검증은 아니므로 API가 token budget이라고 부르지 않는다. 포함/제외 사유를 반환한다.
-- 자동 prompt injection은 하지 않는다. 호스트의 범위 및 전체 프롬프트 예산을 확인할 수 있는 서버 연결이 먼저다.
-- GitHub/Gitea는 같은 검증·패키징 스크립트를 실행한다. 버전 태그는 package.json과 일치해야 한다. 컨테이너는 버전 태그만 발행하며 latest는 사용하지 않는다. 배포란 release asset/registry 발행이며 운영 스택 자동 교체는 포함하지 않는다.
+- Lite는 별도 LORE 서버 없이 기기 저장·추출을 수행한다. Full은 얇은 UI와 Node.js 22.23+ 사이드카다. 내장 HTTP/SQLite로 외부 런타임 npm 의존성을 두지 않는다. 서버는 단일 프로세스로 운영한다.
+- Full의 정본은 SQLite, Lite는 문서별 immutable revision과 작은 index다. Markdown은 id/path/aliases/evidence frontmatter를 포함하는 내보내기 형식이며 디렉터리 파일과 DB를 이중 정본으로 운영하지 않는다.
+- 원문은 파생 위키와 별도 저장한다. Full은 모든 source revision을 보존한다. Lite는 제한된 현재 원문과 문서별 최근 5개 revision 및 인용 근거를 보존한다. 원문 변경은 의존 문서를 즉시 제외한다.
+- scope는 installation/user/character/chat/branch의 안정된 ID다. 자동 수집에는 host chaId/chat.id/message.chatId를 사용하고 count는 검증용 cursor로만 사용한다. Full bearer token은 서버가 scope/audience를 고정한다. collect 권한은 해당 범위의 cursor 수집에 한정되고 임의 revision events용 ingest와 분리한다.
+- 호스트 연결부는 전체 char/chat snapshot 대신 최대 32 위치/60KB delta를 반환한다. 기존 prefix는 incremental SHA-256으로 검증한다. 큰 문자열 전체 복사는 없지만 호스트에서 O(n) 재검증하므로 서버 outbox로 발전시킬 여지가 있다.
+- 문서 경로는 상대 .md 경로, 최대 8단계다. aliases는 NFKC/공백/대소문자를 정규화하며 제목 변경 시 옛 이름을 보존한다. 모호한 링크는 선택 후보를 표시한다. Markdown 렌더링에 innerHTML을 사용하지 않는다.
+- Full 추출은 DB 잠금 밖에서 호출하고 근거 revision/작업 상태를 다시 확인한 뒤 원자적으로 적용한다. 제출 순서대로 작업하고 타임아웃·3회 재시도·재시작 복구를 지원한다. Lite는 동일한 제안 검증과 index 발행으로 부분 갱신을 방지하며 실행은 탭 생명주기에 묶인다.
+- pinned/manual 문서는 자동 변경하지 않고 별도 충돌 제안으로 보존한다. 무효 문서는 일반 기억 검색에서 빠지며 Full 폴더 탐색에서 검토할 수 있다. 재추출은 무효 문서의 ID/revision을 이어받아 복구할 수 있다.
+- 컨텍스트 byte 상한과 호스트 tokenizer의 기억/전체 요청 예산은 별개다. 필수 문서 초과는 전체 주입을 중지한다. beforeRequest와 최종 OpenAI 호환 text body에서 검사하며 응답 예약량도 포함한다. 다른 플러그인의 후속 변환과 provider의 내부 계산은 별도 한계다.
+- 모델 미설정 시 기존 Full events는 결정적인 원문 인용 작업을 수행한다. 자동 수집 시작은 모델 설정을 요구해 인용과 LLM 기억을 혼동하지 않는다.
+- 초기 Full은 명시적 URL + scoped bearer 연결이다. Docker 기본 포트는 내부 전용이며 호스트 인증 프록시·서버 outbox·영속 서버 측 채팅 연결은 다음 범위다. 서비스 스택을 자동 교체하지 않는다.
+- GitHub/Gitea는 같은 검증·패키징을 사용하고 package.json과 일치하는 v* 태그로 버전 이미지/첨부 파일을 발행한다. 사용자 지시에 따라 Gitea runner 실패 조사는 보류한다.
