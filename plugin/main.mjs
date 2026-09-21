@@ -8,7 +8,7 @@ export async function install(host,edition) {
   let ui=null,alive=true;const registrations=[],notebooks=new Map(),runtime=new AutoMemory(host);
   const getStore=async options=>{if(edition==='Full')return new FullStore(host,options.url,options.token);if(!notebooks.has(options.notebook))notebooks.set(options.notebook,new LiteStore(await host.getLocalPluginStorage(),options.notebook));return notebooks.get(options.notebook);};
   let autoStore=null,llmBusy=false;
-  const automation={scope:async options=>{const s=await getStore(options);try{return await new PocketRisuClient(host).identity(s);}finally{if(edition==='Full')s.close();}},status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
+  const automation={scope:async options=>{const client=new PocketRisuClient(host),selection=await client.selection();let s;try{s=await getStore(options);return await client.identity(s);}catch(error){return {...selection,message:error.message};}finally{if(edition==='Full')s?.close();}},status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
     await automation.stop();autoStore=await getStore(options);
     // Native fetch transfers a response through RPC; avoid nonserializable signals
     // and never overlap an unabortable provider request after its local deadline.

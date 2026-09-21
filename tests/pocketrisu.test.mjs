@@ -30,4 +30,5 @@ test('Full reads only configured upstream and keeps raw chat on the server',asyn
  await assert.rejects(reader(store,{...scope,chatId:'other'},'world',{selector,sessionToken:'x',boundaries:['m1']}),/Chat scope/);
  await assert.rejects(reader(store,scope,'world',{selector:{...selector,characterId:'other'},sessionToken:'x',boundaries:['m1']}),/Character scope/);
  assert.throws(()=>pocketRisuReader('http://user:secret@host'),/origin/);
+ assert.equal((await reader(store,{...scope,chatId:'setup'},'world',{selector,sessionToken:'x',identityOnly:true,allowDiscovery:true})).chatId,'chat');
 });

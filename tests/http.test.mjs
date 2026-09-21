@@ -41,3 +41,21 @@ test('body cap, malformed input, separate ingest credential, disconnected worker
   assert.equal((await (await request('/jobs/'+job.id,'GET',undefined,other)).json()).state,'completed');
   assert.equal((await request('/jobs/'+job.id)).status,403);
 });
+
+test('Full LLM settings are credential-bound, redact keys, and keep accepted jobs off the browser',async t=>{
+ const {createServer:serverFactory}=await import('node:http');
+ let calls=0;
+ const llm=serverFactory(async(req,res)=>{calls++;assert.equal(req.headers.authorization,'Bearer secret-key-fixture');let raw='';for await(const part of req)raw+=part;const data=JSON.parse(raw);assert.equal(data.model,'test-model');res.setHeader('content-type','application/json');res.end(JSON.stringify({choices:[{message:{content:'{"pages":[]}'}}]}));});
+ llm.listen(0,'127.0.0.1');await once(llm,'listening');t.after(()=>llm.close());
+ const store=new Store(':memory:'),token='configured-token-'.repeat(3),readToken='read-only-token-'.repeat(3),server=createServer(store,[{token,scope,collect:true,configure:true},{token:readToken,scope}],{workerInterval:10});
+ server.listen(0,'127.0.0.1');await once(server,'listening');
+ t.after(async()=>{const done=once(server,'close');server.close();server.closeAllConnections();await done;store.close();});
+ const endpoint=`http://127.0.0.1:${server.address().port}`,config={provider:'custom',url:`http://127.0.0.1:${llm.address().port}/v1/chat/completions`,model:'test-model',apiKey:'secret-key-fixture'};
+ const request=(method,credential=token)=>fetch(endpoint+'/llm',{method,headers:{authorization:`Bearer ${credential}`,'content-type':'application/json'},...(method==='POST'?{body:JSON.stringify(config)}:{})});
+ assert.equal((await request('POST',readToken)).status,403);assert.equal((await request('POST')).status,200);
+ assert.ok(!(await (await request('GET')).text()).includes('secret-key-fixture'));
+ store.enqueue(scope,{eventId:'independent',baseRevision:0,changes:[{id:'m',revision:1,op:'upsert',visibility:'public',text:'Fact.'}]});
+ const deadline=Date.now()+3000;while(store.jobs(scope)[0].state!=='completed'&&Date.now()<deadline)await new Promise(r=>setTimeout(r,20));
+ assert.equal(store.jobs(scope)[0].state,'completed');assert.equal(calls,1);assert.equal((await request('DELETE')).status,200);
+ assert.equal((await (await request('GET')).json()).configured,false);
+});

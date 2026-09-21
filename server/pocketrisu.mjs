@@ -7,6 +7,7 @@ export function pocketRisuReader(upstream,fetcher=fetch) {
   return async(store,scope,audience,data)=>{
     const selector=chatSelector(data.selector);requireValue(selector.characterId===scope.characterId,'Character scope mismatch',403);
     const chat=await fetchSavedChat(fetcher,url.origin,selector,data.sessionToken,16*1024*1024),identity=savedIdentity(selector,chat);
+    if(data.identityOnly===true&&data.allowDiscovery===true)return identity;
     requireValue(identity.chatId===scope.chatId&&identity.branchId===scope.branchId,'Chat scope mismatch',409);
     if(data.identityOnly===true)return identity;
     const snapshot=confirmedSnapshot(selector,chat,data.boundaries);let {cursor}=store.syncState(scope),delta;

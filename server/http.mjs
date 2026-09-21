@@ -64,7 +64,7 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       if(resource==='capture'&&req.method==='POST'&&parts.length===1){
         requireValue(principal.collect===true,'Collection credential required',403);
         requireValue(hostReader,'Configure LORE_POCKETRISU_URL on the sidecar',503);
-        return json(res,200,await hostReader(store,scope,audience,await body(req)));
+        return json(res,200,await hostReader(store,scope,audience,{...await body(req),allowDiscovery:principal.configure===true}));
       }
       if(resource==='sync'&&parts.length===1){
         requireValue(principal.collect===true||principal.ingest===true,'Collection credential required',403);
