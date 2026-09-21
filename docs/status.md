@@ -20,7 +20,12 @@ Node 테스트 43개: 원문·revision·범위·분기·큐 복구, 공급자별
 
 ## 발행 상태
 
-alpha.3 로컬 구현·전체 검증·패키지 설치·격리 컨테이너 재시작 검증이 통과했다. 실제 PocketRisu의 msgpackr 1.11.9 encoder로 Unicode·undefined·타임스탬프·20/128/500개 배열 디코딩도 확인했고 작은 fixture를 회귀 테스트에 포함했다. 양쪽 SSH main push가 성공했으며 GitHub CI를 진행 중이다. 원격 push/CI/태그 Release와 다운로드 체크섬 결과가 아래에 기록되기 전에는 원격 발행 완료로 해석하지 않는다.
+- [최종 GitHub CI 35603112924](https://github.com/Sallos725/LORE/actions/runs/35603112924) 성공.
+- [태그 Release 35603398635](https://github.com/Sallos725/LORE/actions/runs/35603398635) 성공. `v0.1.0-alpha.3`는 `193254e11e9d68d6b5fb2441a5b194275334427a`를 가리킨다.
+- [GitHub alpha.3 prerelease](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.3)에 Lite/Full JS, Full ZIP, 서버 tar.gz, release.json, SHA256SUMS 총 6개를 게시했다. 실제 다운로드의 모든 checksum이 로컬의 재현 가능한 빌드와 일치했다. 호스트 패치 파일/API 의존성이 없음을 산출물에서도 확인했다.
+- `ghcr.io/sallos725/lore:v0.1.0-alpha.3` 발행 및 linux/amd64·linux/arm64 manifest 검증 성공. digest: `sha256:b3160e95b875f53687e1b526142cec3307f1e6dbc8855c8f7005f9455806b005`.
+- Release에서 Node 43개·Python 5개, Chromium/WebKit 각각 Lite/Full, 서버 패키지 설치 실행, 격리 컨테이너 재시작 보존 검사가 통과했다. 실제 PocketRisu의 msgpackr 1.11.9 encoder로 Unicode·undefined·타임스탬프·20/128/500개 배열 디코딩도 확인했고 작은 fixture를 회귀 테스트에 포함했다.
+- GitHub/Gitea SSH main push 성공. Gitea에는 alpha.3 태그를 보내지 않았다. 실행 중인 PocketRisu·상위 서비스는 변경하지 않았다.
 
 이전 [alpha.2](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2)는 GitHub에서 실제 발행했다. 이 버전은 호스트 패치를 요구하므로 새 설치에는 alpha.3 이후를 사용한다. 이전 게시 파일과 태그는 덮어쓰지 않는다. GitHub PRIVATE 설정은 유지한다.
 
