@@ -1,11 +1,11 @@
 import {requireValue} from '../shared/core.mjs';
-import {fetchSavedChat,confirmedSnapshot,savedIdentity,chatSelector} from '../shared/pocketrisu.mjs';
+import {fetchSavedChat,confirmedSnapshot,savedIdentity,resolveChatSelector} from '../shared/pocketrisu.mjs';
 import {readLoreDelta} from '../shared/chat-delta.mjs';
 import {sameCursor} from '../shared/sync.mjs';
 export function pocketRisuReader(upstream,fetcher=fetch) {
   const url=new URL(upstream);requireValue(['https:','http:'].includes(url.protocol)&&!url.username&&!url.password&&!url.search&&!url.hash&&url.pathname==='/','Configure one PocketRisu origin');
   return async(store,scope,audience,data)=>{
-    const selector=chatSelector(data.selector);requireValue(selector.characterId===scope.characterId,'Character scope mismatch',403);
+    const selector=await resolveChatSelector(fetcher,url.origin,data.selector,data.sessionToken);requireValue(selector.characterId===scope.characterId,'Character scope mismatch',403);
     const chat=await fetchSavedChat(fetcher,url.origin,selector,data.sessionToken,16*1024*1024),identity=savedIdentity(selector,chat);
     if(data.identityOnly===true&&data.allowDiscovery===true)return identity;
     requireValue(identity.chatId===scope.chatId&&identity.branchId===scope.branchId,'Chat scope mismatch',409);

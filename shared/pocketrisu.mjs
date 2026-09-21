@@ -39,8 +39,20 @@ export async function readBounded(response,maxBytes,{checkStatus=true}={}) {
   const bytes=new Uint8Array(size);let pos=0;for(const chunk of chunks){bytes.set(chunk,pos);pos+=chunk.length;}return bytes;
 }
 export function chatSelector(value) {
-  requireValue(typeof value?.characterId==='string'&&value.characterId.length>0&&value.characterId.length<=160&&Number.isSafeInteger(value.index)&&value.index>=0&&value.index<100000,'Open a saved PocketRisu chat');
-  return {characterId:value.characterId,index:value.index};
+  const stable=typeof value?.characterId==='string'&&value.characterId.length>0&&value.characterId.length<=160;
+  const numeric=Number.isSafeInteger(value?.characterIndex)&&value.characterIndex>=0&&value.characterIndex<100000;
+  requireValue((stable||numeric)&&Number.isSafeInteger(value.index)&&value.index>=0&&value.index<100000,'Open a saved PocketRisu chat');
+  return {...(stable?{characterId:value.characterId}:{characterIndex:value.characterIndex}),index:value.index};
+}
+export async function resolveChatSelector(fetcher,base,value,token,maxBytes=262144){
+ const selector=chatSelector(value);if(selector.characterId)return selector;
+ // Stock PocketRisu returns the DB array index in V3. Its authenticated stats
+ // endpoint emits active rows in that same order, followed by archived rows.
+ // This metadata response contains no chat text or character-card bodies.
+ const response=await fetcher(base+'/api/db/stats/characters',{method:'GET',headers:{'risu-auth':token},redirect:'error',requestTimeoutMs:5000,signal:AbortSignal.timeout(5000)});
+ const result=JSON.parse(new TextDecoder().decode(await readBounded(response,maxBytes))),row=result.characters?.[selector.characterIndex];
+ requireValue(row&&!row.archived&&typeof row.chaId==='string'&&row.chaId.length>0,'Selected character is not saved yet');
+ return chatSelector({characterId:row.chaId,index:selector.index});
 }
 export function savedIdentity(selector,chat){return {characterId:selector.characterId,chatId:chat.id,branchId:chat.id};}
 export function confirmedSnapshot(selector,chat,boundaries) {

@@ -1,10 +1,10 @@
 import {requireValue} from '../shared/core.mjs';
-import {chatSelector,fetchSavedChat,readBounded,savedIdentity,confirmedSnapshot} from '../shared/pocketrisu.mjs';
+import {chatSelector,resolveChatSelector,fetchSavedChat,readBounded,savedIdentity,confirmedSnapshot} from '../shared/pocketrisu.mjs';
 import {readLoreDelta} from '../shared/chat-delta.mjs';
 import {sameCursor} from '../shared/sync.mjs';
 export class PocketRisuClient {
  constructor(host){this.host=host;}
- async selection(){return chatSelector({characterId:await this.host.getCurrentCharacterIndex(),index:await this.host.getCurrentChatIndex()});}
+ async selection(){const selected=await this.host.getCurrentCharacterIndex();requireValue((Number.isSafeInteger(selected)&&selected>=0)||(typeof selected==='string'&&selected.length>0),'채팅을 연 뒤 채팅 메뉴 → LORE에서 연결하세요.');return chatSelector({...typeof selected==='string'?{characterId:selected}:{characterIndex:selected},index:await this.host.getCurrentChatIndex()});}
  async session(){
   const response=await this.host.nativeFetch('/api/test_auth',{method:'GET',requestTimeoutMs:5000});
   const result=JSON.parse(new TextDecoder().decode(await readBounded(response,8192)));
@@ -19,16 +19,17 @@ export class PocketRisuClient {
   const selector=await this.selection(),sessionToken=await this.session();let result;
   if(store.capture)result=await store.capture({selector,sessionToken,identityOnly:boundaries===null,...(boundaries?{boundaries}:{})});
   else {
-   const chat=await this.read(selector,sessionToken),identity=savedIdentity(selector,chat);
+   const resolved=await resolveChatSelector((url,{signal,...args})=>this.host.nativeFetch(url,args),'',selector,sessionToken);
+   const chat=await this.read(resolved,sessionToken),identity=savedIdentity(resolved,chat);
    if(boundaries===null)result=identity;
    else {
     const bound=(await store.identity()).scope;requireValue(bound.characterId===identity.characterId&&bound.chatId===identity.chatId&&bound.branchId===identity.branchId,'다른 채팅입니다. 이 노트북의 자동 기억을 중지했습니다.');
-    const snapshot=confirmedSnapshot(selector,chat,boundaries);let {cursor}=await store.syncState(),delta;
+    const snapshot=confirmedSnapshot(resolved,chat,boundaries);let {cursor}=await store.syncState(),delta;
     for(let i=0;i<4;i++){delta=await readLoreDelta(snapshot,cursor);if(!sameCursor(cursor,delta.cursor))await store.sync(delta);cursor=delta.cursor;if(!delta.hasMore)break;}
     result={...identity,cursor,complete:!delta.hasMore};
    }
   }
-  const current=await this.selection();requireValue(current.characterId===selector.characterId&&current.index===selector.index,'열린 채팅이 변경되었습니다.');
+  const current=await this.selection();requireValue(JSON.stringify(current)===JSON.stringify(selector),'열린 채팅이 변경되었습니다.');
   return {...result,selector};
  }
  async identity(store){return this.capture(store);}

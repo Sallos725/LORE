@@ -9,10 +9,10 @@ const storage=()=>{const data=new Map();return {getItem:async k=>structuredClone
 function fixture(){
  const character={chaId:'c',chatPage:0,chats:[{id:'chat',message:[{chatId:'m1',role:'char',data:'Alice lives in Seoul.'},{chatId:'future',role:'char',data:'Unconfirmed stream.'}]}]},store=new LiteStore(storage()),state={offline:false,maxContext:8192},hooks=new Set();
  const host={
-  getCurrentCharacterIndex:async()=>character.chaId,getCurrentChatIndex:async()=>character.chatPage,
+  getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>character.chatPage,
   getDatabase:async keys=>{assert.deepEqual(keys,['maxContext','maxResponse']);return {maxContext:state.maxContext,maxResponse:1024};},
   getCharacter:()=>{throw Error('Full character copies forbidden');},
-  nativeFetch:async(url,args)=>{if(state.offline)throw Error('offline');assert.equal(args.method,'GET');assert.ok(args.requestTimeoutMs);if(url==='/api/test_auth')return Response.json({status:'success',token:'synthetic-session'});assert.equal(url,'/api/chat-content/c/0');assert.equal(args.headers['risu-auth'],'synthetic-session');return new Response(encodeFixture(character.chats[0]));},
+  nativeFetch:async(url,args)=>{if(state.offline)throw Error('offline');assert.equal(args.method,'GET');assert.ok(args.requestTimeoutMs);if(url==='/api/db/stats/characters')return Response.json({characters:[{chaId:character.chaId}]});if(url==='/api/test_auth')return Response.json({status:'success',token:'synthetic-session'});assert.equal(url,'/api/chat-content/c/0');assert.equal(args.headers['risu-auth'],'synthetic-session');return new Response(encodeFixture(character.chats[0]));},
   addRisuReplacer:async(_,fn)=>hooks.add(fn),removeRisuReplacer:async(_,fn)=>hooks.delete(fn),registerBodyIntercepter:async fn=>{hooks.add(fn);return {id:'body'};},unregisterBodyIntercepter:async()=>hooks.clear()
  };
  const extractor=async input=>[{title:'Alice',kind:'person',path:'people/Alice.md',aliases:['앨리스'],body:'Alice lives in Seoul.',expectedRevision:0,visibility:'public',evidence:[{messageId:input.sources[0].id,revision:input.sources[0].revision,quote:input.sources[0].text}]}];

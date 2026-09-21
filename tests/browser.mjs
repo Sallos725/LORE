@@ -11,7 +11,7 @@ import {createServer} from '../server/http.mjs';
 const scope={installationId:'test',userId:'test',characterId:'c',chatId:'chat',branchId:'chat'},token='browser-test-'.repeat(4);
 const extract=async input=>[{title:'Alice',kind:'person',path:'people/Alice.md',aliases:['앨리스'],body:'Alice lives in Seoul.',visibility:'public',expectedRevision:0,evidence:[{messageId:input.sources[0].id,revision:input.sources[0].revision,quote:input.sources[0].text}]}];
 const savedChat={id:'chat',message:[{chatId:'browser-m1',role:'char',data:'Alice lives in Seoul.'}]};
-const upstream=async(url)=>url.endsWith('/api/test_auth')?Response.json({status:'success'}):new Response(encodeFixture(savedChat));
+const upstream=async(url)=>url.endsWith('/api/db/stats/characters')?Response.json({characters:[{chaId:'c'}]}):url.endsWith('/api/test_auth')?Response.json({status:'success'}):new Response(encodeFixture(savedChat));
 const hostReader=pocketRisuReader('http://pocketrisu.test',upstream);
 const store=new Store(':memory:');const server=createServer(store,[],{authenticate:pocketRisuAuth(store,'http://pocketrisu.test',upstream),workerInterval:50,extractor:extract,hostReader});server.listen(0,'127.0.0.1');await once(server,'listening');
 const base=`http://127.0.0.1:${server.address().port}`;
@@ -23,6 +23,7 @@ try {
         const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];
         page.on('pageerror',error=>errors.push(error.message));
         await page.exposeFunction('backendFetch',async(url,options)=>{
+          if(url==='/api/db/stats/characters'){assert.equal(edition,'Lite');return {status:200,text:JSON.stringify({characters:[{chaId:'c'}]})};}
           if(url==='/api/test_auth')return {status:200,text:JSON.stringify({status:'success',token:'synthetic-session'})};
           if(url==='/api/chat-content/c/0'){assert.equal(edition,'Lite','Full must not copy raw chat through the browser');return {status:200,bytes:[...encodeFixture(savedChat)]};}
           assert.ok(url.startsWith(base+'/'));
@@ -40,7 +41,7 @@ try {
             getLocalPluginStorage:async()=>({getItem:async key=>structuredClone(values.get(key)),setItem:async(key,value)=>values.set(key,structuredClone(value)),removeItem:async key=>values.delete(key)}),
             nativeFetch:async(url,options)=>{const result=await window.backendFetch(url,options);return new Response(result.bytes?Uint8Array.from(result.bytes):result.text,{status:result.status});},
             getDatabase:async keys=>{if(JSON.stringify(keys)!==JSON.stringify(['maxContext','maxResponse'])){window.forbiddenCalls++;throw Error('large DB read');}return {maxContext:8192,maxResponse:1024};},getCharacter:()=>{window.forbiddenCalls++;throw Error('forbidden');},
-            getCurrentCharacterIndex:async()=> 'c',getCurrentChatIndex:async()=>0,
+            getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,
             addRisuReplacer:async(type,fn)=>{window.beforeLore=fn;},removeRisuReplacer:async()=>{window.beforeLore=null;},
             registerBodyIntercepter:async fn=>{window.finalLore=fn;return {id:'budget'};},unregisterBodyIntercepter:async()=>{window.finalLore=null;},
           };

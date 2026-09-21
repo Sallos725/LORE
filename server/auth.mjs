@@ -1,6 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto';
 import {boundedString,requireValue,scopeKey} from '../shared/core.mjs';
-import {chatSelector,fetchSavedChat,readBounded,savedIdentity} from '../shared/pocketrisu.mjs';
+import {resolveChatSelector,fetchSavedChat,readBounded,savedIdentity} from '../shared/pocketrisu.mjs';
 
 // PocketRisu has one password-protected account per installation. Validate its
 // existing login at a fixed operator-configured origin; never accept a client URL
@@ -27,7 +27,7 @@ export function pocketRisuAuth(store,upstream,fetcher=fetch){
   return {scope,audience:'world',collect:true,configure:true,sessionToken:token};
  }
  authenticate.connect=async(principal,data)=>{
-  const selector=chatSelector(data.selector),chat=await fetchSavedChat(fetcher,origin.origin,selector,principal.sessionToken,16*1024*1024);
+  const selector=await resolveChatSelector(fetcher,origin.origin,data.selector,principal.sessionToken),chat=await fetchSavedChat(fetcher,origin.origin,selector,principal.sessionToken,16*1024*1024);
   const scope={installationId,userId:'pocketrisu',...savedIdentity(selector,chat)};
   store.db.prepare('INSERT OR IGNORE INTO host_chats VALUES (?)').run(scopeKey(scope));
   return {scope,audience:'world'};

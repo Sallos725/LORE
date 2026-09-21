@@ -9,6 +9,7 @@ import {encodeFixture} from './saved-chat-fixture.mjs';
 const chat={id:'saved-chat',message:[]};
 const upstream=async(url,options)=>{
  assert.equal(options.headers['risu-auth'],'host-login-fixture');assert.equal(options.redirect,'error');
+ if(url.endsWith('/api/db/stats/characters'))return Response.json({characters:[{chaId:'character'}]});
  if(url.endsWith('/api/test_auth'))return Response.json({status:'success'});
  assert.equal(url,'http://host.test/api/chat-content/character/0');return new Response(encodeFixture(chat));
 };
@@ -19,7 +20,7 @@ test('Full connects with existing host login, derives stable scope, isolates ins
  t.after(async()=>{const done=once(server,'close');server.close();server.closeAllConnections();await done;});
  const base=`http://127.0.0.1:${server.address().port}`;
  let loginCalls=0;
- const host={getCurrentCharacterIndex:async()=>'character',getCurrentChatIndex:async()=>0,nativeFetch:async(url,options)=>{
+ const host={getCurrentCharacterIndex:async()=>0,getCurrentChatIndex:async()=>0,nativeFetch:async(url,options)=>{
   if(url==='/api/test_auth'){loginCalls++;return Response.json({status:'success',token:'host-login-fixture'});}return fetch(url,options);
  }};
  assert.equal((await fetch(base+'/wiki')).status,401);
