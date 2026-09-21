@@ -28,6 +28,6 @@ test('Full transport allows HTTP and HTTPS URLs, handles errors and close',async
   assert.equal(connectionURL('http://100.96.204.101:6011'),'http://100.96.204.101:6011');
   assert.throws(()=>connectionURL('file:///tmp/lore'),/HTTP/);
   assert.equal(connectionURL('http://localhost:6011/'),'http://localhost:6011');
-  const full=new FullStore({nativeFetch:async()=>new Response('{"error":"Unauthorized"}',{status:401})},'https://example.com','a'.repeat(32));
+  const full=new FullStore({nativeFetch:async url=>url==='/api/test_auth'?Response.json({status:'success',token:'synthetic-session'}):new Response('{"error":"Unauthorized"}',{status:401})},'https://example.com');
   await assert.rejects(full.identity(),/Unauthorized/);full.close();await assert.rejects(full.identity(),/닫혔/);
 });

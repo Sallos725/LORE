@@ -1,5 +1,8 @@
 """Verify hashes and actually run each installed server archive in a temp folder."""
 import hashlib
+import base64
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 import json
 import os
 from pathlib import Path
@@ -22,10 +25,18 @@ def smoke(directory):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-    token = 'package-smoke-test-credential-' * 2
-    credentials = [{'token': token, 'scope': dict(installationId='test', userId='test', characterId='test', chatId='test', branchId='test')}]
-    env = {**os.environ, 'PORT': str(port), 'HOST': '127.0.0.1', 'LORE_DATA_DIR': str(directory / 'data'), 'LORE_CREDENTIALS_JSON': json.dumps(credentials)}
-    env.pop('LORE_CREDENTIALS_FILE', None)
+    token = 'synthetic-pocketrisu-login'
+    fixture = json.loads((DIST.parent / 'tests/fixtures/pocketrisu-chat.json').read_text())
+    class Upstream(BaseHTTPRequestHandler):
+        def log_message(self, *args): pass
+        def do_GET(self):
+            if self.headers.get('risu-auth') != token:
+                self.send_response(401); self.end_headers(); return
+            data = json.dumps({'status': 'success'}).encode() if self.path == '/api/test_auth' else base64.b64decode(fixture['base64'])
+            self.send_response(200); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+    upstream = ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+    Thread(target=upstream.serve_forever, daemon=True).start()
+    env = {**os.environ, 'PORT': str(port), 'HOST': '127.0.0.1', 'LORE_DATA_DIR': str(directory / 'data'), 'LORE_POCKETRISU_URL': f'http://127.0.0.1:{upstream.server_port}'}
     proc = subprocess.Popen(['node', 'server/main.mjs'], cwd=directory, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     try:
         deadline = time.monotonic() + 10
@@ -42,12 +53,16 @@ def smoke(directory):
                     raise RuntimeError('Packaged server did not start')
                 time.sleep(0.05)
         headers = {'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'}
+        with urlopen(Request(base + '/connect', data=json.dumps({'selector': {'characterId': 'c', 'index': 0}}).encode(), headers=headers), timeout=2) as response:
+            scope = json.load(response)['scope']
+        headers.update({'X-Lore-Character': scope['characterId'], 'X-Lore-Chat': scope['chatId']})
         data = json.dumps({'page': {'title': 'Installed', 'body': 'Smoke test'}, 'expectedRevision': 0}).encode()
         with urlopen(Request(base + '/wiki/smoke', data=data, headers=headers, method='PATCH'), timeout=2) as response:
             assert json.load(response)['revision'] == 1
         with urlopen(Request(base + '/wiki/smoke', headers=headers), timeout=2) as response:
             assert json.load(response)['body'] == 'Smoke test'
     finally:
+        upstream.shutdown(); upstream.server_close()
         proc.terminate()
         try:
             proc.communicate(timeout=8)

@@ -3,6 +3,7 @@ import {readFileSync} from 'node:fs';
 import {once} from 'node:events';
 import assert from 'node:assert/strict';
 import {encodeFixture} from './saved-chat-fixture.mjs';
+import {pocketRisuAuth} from '../server/auth.mjs';
 import {pocketRisuReader} from '../server/pocketrisu.mjs';
 
 import {Store} from '../server/store.mjs';
@@ -10,8 +11,9 @@ import {createServer} from '../server/http.mjs';
 const scope={installationId:'test',userId:'test',characterId:'c',chatId:'chat',branchId:'chat'},token='browser-test-'.repeat(4);
 const extract=async input=>[{title:'Alice',kind:'person',path:'people/Alice.md',aliases:['앨리스'],body:'Alice lives in Seoul.',visibility:'public',expectedRevision:0,evidence:[{messageId:input.sources[0].id,revision:input.sources[0].revision,quote:input.sources[0].text}]}];
 const savedChat={id:'chat',message:[{chatId:'browser-m1',role:'char',data:'Alice lives in Seoul.'}]};
-const hostReader=pocketRisuReader('http://pocketrisu.test',async()=>new Response(encodeFixture(savedChat)));
-const store=new Store(':memory:');const server=createServer(store,[{token,scope,collect:true,configure:true}],{workerInterval:50,extractor:extract,hostReader});server.listen(0,'127.0.0.1');await once(server,'listening');
+const upstream=async(url)=>url.endsWith('/api/test_auth')?Response.json({status:'success'}):new Response(encodeFixture(savedChat));
+const hostReader=pocketRisuReader('http://pocketrisu.test',upstream);
+const store=new Store(':memory:');const server=createServer(store,[],{authenticate:pocketRisuAuth(store,'http://pocketrisu.test',upstream),workerInterval:50,extractor:extract,hostReader});server.listen(0,'127.0.0.1');await once(server,'listening');
 const base=`http://127.0.0.1:${server.address().port}`;
 try {
   for(const [name,engine] of [['chromium',chromium],['webkit',webkit]]){
@@ -45,9 +47,9 @@ try {
         });
         await page.addScriptTag({content:readFileSync(edition==='Lite'?'lite/lore-lite.js':'full/plugin/lore-full.js','utf8')});
         await page.waitForFunction(()=>window.registrations.size===2);await page.evaluate(()=>window.openLore());
-        if(edition==='Full'){await page.locator('[data-url]').fill(base);await page.locator('[data-token]').fill(token);}
+        if(edition==='Full'){await page.locator('[data-url]').fill(base);}
         await page.locator('[data-start]').click();await page.locator('[data-work]').waitFor({state:'visible'});
-        await page.getByText('열린 범위:',{exact:false}).waitFor();await page.locator('[data-new]').click();
+        await page.getByText('현재 채팅에 연결했습니다.',{exact:false}).waitFor();await page.locator('[data-new]').click();
         const title=`${name} ${edition}`;await page.locator('[data-title]').fill(title);await page.locator('[data-path]').fill('characters/team/'+title+'.md');await page.locator('[data-aliases]').fill('별칭, lookup_'+name+'_'+edition);await page.locator('[data-body]').fill('<img src=x onerror="window.bad=true"> 인물은 서울에 있다.');
         await page.locator('[data-save]').click();await page.getByText('저장했습니다.',{exact:true}).waitFor();
         await page.locator('[data-tree]').click();await page.getByRole('button',{name:'📁 characters',exact:true}).click();await page.getByRole('button',{name:'📁 team',exact:true}).click();await page.locator('.list button').filter({hasText:title}).waitFor();await page.locator('[data-search]').fill('lookup_'+name+'_'+edition);await page.locator('[data-find]').click();

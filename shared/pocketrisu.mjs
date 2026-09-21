@@ -28,8 +28,8 @@ export function decodeChat(bytes) {
   };
   const chat=read();requireValue(at===bytes.length&&typeof chat?.id==='string'&&chat.id.length>0&&chat.id.length<=160&&Array.isArray(chat.message)&&!chat._stub&&!chat._serverPlaceholder,'Invalid saved chat');return chat;
 }
-export async function readBounded(response,maxBytes) {
-  requireValue(response.ok,`PocketRisu HTTP ${response.status}`,502);
+export async function readBounded(response,maxBytes,{checkStatus=true}={}) {
+  if(checkStatus)requireValue(response.ok,`PocketRisu HTTP ${response.status}`,502);
   const declared=Number(response.headers.get('content-length')??0);
   if(declared>maxBytes){await response.body?.cancel();throw Error('Chat exceeds this edition’s size limit');}
   requireValue(response.body?.getReader,'Streaming response required');

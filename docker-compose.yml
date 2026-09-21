@@ -3,8 +3,7 @@ services:
     image: ${LORE_IMAGE:-ghcr.io/sallos725/lore}:${LORE_VERSION:-latest}
     build: .
     environment:
-      LORE_CREDENTIALS_JSON: ${LORE_CREDENTIALS_JSON:?Set scoped credentials in .env}
-      LORE_POCKETRISU_URL: ${LORE_POCKETRISU_URL:-}
+      LORE_POCKETRISU_URL: ${LORE_POCKETRISU_URL:?Set the existing PocketRisu origin in .env}
       LORE_LLM_PROVIDER: ${LORE_LLM_PROVIDER:-custom}
       LORE_LLM_URL: ${LORE_LLM_URL:-}
       LORE_LLM_MODEL: ${LORE_LLM_MODEL:-}

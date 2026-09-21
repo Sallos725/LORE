@@ -9,7 +9,7 @@ export class AutoMemory {
   const identity=await this.client.identity(store),scope={characterId:identity.characterId,chatId:identity.chatId,branchId:identity.branchId};
   if(store.bind)await store.bind(scope);const remote=await store.identity();
   requireValue(sameChat(scope,remote.scope),'열린 채팅과 LORE 저장 범위가 다릅니다.');
-  requireValue(remote.collectionEnabled,'이 토큰은 자동 수집 권한이 없습니다.');requireValue(extractor||remote.extractionEnabled,'기억 추출 모델을 먼저 설정하세요.');
+  requireValue(remote.collectionEnabled,'대화 수집을 사용할 수 없습니다.');requireValue(extractor||remote.extractionEnabled,'기억 추출 모델을 먼저 설정하세요.');
   this.store=store;this.scope=scope;this.extractor=extractor;this.memoryBudget=memoryBudget;this.controller=new AbortController();
   this.beforeHook=(messages,type)=>this.before(messages,type);this.bodyHook=(body,type)=>this.finalBody(body,type);
   try {

@@ -5,17 +5,21 @@ import {createHash} from 'node:crypto';
 import {LIMITS, boundedString, requireValue, scopeKey} from '../shared/core.mjs';
 const digest = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer(store, credentials, {workerInterval = 250, extractor = null, hostReader = null} = {}) {
-  requireValue(Array.isArray(credentials) && credentials.length > 0 && credentials.length <= 128, 'Configure 1–128 credentials');
+export function createServer(store, credentials, {workerInterval = 250, extractor = null, hostReader = null, authenticate = null} = {}) {
+  requireValue(authenticate || (Array.isArray(credentials) && credentials.length > 0 && credentials.length <= 128), 'Configure PocketRisu login authentication');
   const principals = new Map(),models=new Map();
-  const modelKey=(scope,audience)=>scopeKey(scope)+'\0'+audience;
-  const choose=job=>{const changes=JSON.parse(job.payload).changes,audience=changes.find(c=>c.visibility!=='public')?.visibility??'world';return models.get(job.scope+'\0'+audience)?.extractor??extractor;};
-  for (const item of credentials) {
+  const modelKey=(scope,audience)=>JSON.stringify([scopeKey(scope),audience]);
+  const choose=job=>{const changes=JSON.parse(job.payload).changes,audience=changes.find(c=>c.visibility!=='public')?.visibility??'world';return models.get(JSON.stringify([job.scope,audience]))?.extractor??extractor;};
+  for (const item of credentials ?? []) {
     requireValue(typeof item.token === 'string' && item.token.length >= 32 && item.token.length <= 512, 'Use tokens of at least 32 characters');
     scopeKey(item.scope);
     boundedString(item.audience ?? 'world', 'audience');
     requireValue(!principals.has(digest(item.token)), 'Duplicate token');
     principals.set(digest(item.token), {...item, audience: item.audience ?? 'world'});
+  }
+  store.db.exec('CREATE TABLE IF NOT EXISTS llm_settings(key TEXT PRIMARY KEY,config TEXT NOT NULL);');
+  for(const row of store.db.prepare('SELECT key,config FROM llm_settings').iterate()){
+    const config=providerConfig(JSON.parse(row.config));models.set(row.key,{config,extractor:createExtractor(config)});
   }
   let active = 0;
   const json = (res, status, value) => {
@@ -43,10 +47,12 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
     try {
       const url = new URL(req.url, 'http://lore.internal');
       if (req.method === 'GET' && url.pathname === '/health') return json(res, 200, {ok:true, service:'lore', apiVersion:1});
-      const token = req.headers.authorization?.match(/^Bearer (.{32,512})$/)?.[1];
-      const principal = token && principals.get(digest(token));
-      requireValue(principal, 'Unauthorized', 401);
       requireValue(active < 16, 'Busy; retry later', 503); active++; counted = true;
+      const token = req.headers.authorization?.match(/^Bearer (.{32,512})$/)?.[1];
+      const principal = authenticate ? await authenticate(req) : token && principals.get(digest(token));
+      requireValue(principal, 'Unauthorized', 401);
+      if(url.pathname==='/connect'&&req.method==='POST'&&authenticate?.connect)return json(res,200,await authenticate.connect(principal,await body(req)));
+      requireValue(principal.scope,'Connect the selected PocketRisu chat first',403);
       const {scope, audience} = principal;
       let parts;
       try { parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent); }
@@ -57,19 +63,19 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       if(resource==='llm'&&parts.length===1){
         requireValue(principal.configure===true,'LLM configuration credential required',403);
         const key=modelKey(scope,audience);
-        if(req.method==='POST'){const config=providerConfig(await body(req));models.set(key,{config,extractor:createExtractor(config)});return json(res,200,{configured:true,provider:config.provider,model:config.model});}
-        if(req.method==='DELETE'){models.delete(key);return json(res,200,{configured:!!extractor});}
+        if(req.method==='POST'){requireValue(models.has(key)||models.size<128,'Configured chat limit reached',413);const config=providerConfig(await body(req));store.db.prepare('INSERT OR REPLACE INTO llm_settings VALUES (?,?)').run(key,JSON.stringify(config));models.set(key,{config,extractor:createExtractor(config)});return json(res,200,{configured:true,provider:config.provider,model:config.model});}
+        if(req.method==='DELETE'){store.db.prepare('DELETE FROM llm_settings WHERE key=?').run(key);models.delete(key);return json(res,200,{configured:!!extractor});}
         if(req.method==='GET'){const config=models.get(key)?.config;return json(res,200,config?{configured:true,provider:config.provider,model:config.model,url:config.url}:{configured:!!extractor});}
       }
       if(resource==='capture'&&req.method==='POST'&&parts.length===1){
         requireValue(principal.collect===true,'Collection credential required',403);
         requireValue(hostReader,'Configure LORE_POCKETRISU_URL on the sidecar',503);
-        return json(res,200,await hostReader(store,scope,audience,{...await body(req),allowDiscovery:principal.configure===true}));
+        return json(res,200,await hostReader(store,scope,audience,{...await body(req),...(principal.sessionToken?{sessionToken:principal.sessionToken}:{}),allowDiscovery:principal.configure===true}));
       }
       if(resource==='sync'&&parts.length===1){
         requireValue(principal.collect===true||principal.ingest===true,'Collection credential required',403);
         if(req.method==='GET')return json(res,200,store.syncState(scope));
-        if(req.method==='POST')return json(res,200,store.sync(scope,await body(req),audience));
+        if(req.method==='POST'){requireValue(!authenticate&&principal.ingest===true,'Use server-side capture',403);return json(res,200,store.sync(scope,await body(req),audience));}
       }
       if(resource==='browse'&&req.method==='GET')return json(res,200,store.browse(scope,{audience,folder:url.searchParams.get('folder')??'',offset:Number(url.searchParams.get('offset')??0),limit:20}));
       if(resource==='resolve'&&req.method==='GET')return json(res,200,store.resolve(scope,url.searchParams.get('target')??'',audience));

@@ -1,3 +1,5 @@
+import {PocketRisuClient} from './pocketrisu.mjs';
+import {readBounded} from '../shared/pocketrisu.mjs';
 import {requireValue} from '../shared/core.mjs';
 export function connectionURL(value) {
   const url=new URL(value);
@@ -6,7 +8,8 @@ export function connectionURL(value) {
   return url.href.replace(/\/$/,'');
 }
 export class FullStore {
-  constructor(host,url,token) { this.host=host;this.url=connectionURL(url);requireValue(typeof token==='string'&&token.length>=32&&token.length<=512,'32자 이상의 scope token이 필요합니다.');this.token=token;this.closed=false;this.busy=false; }
+  constructor(host,url) {this.host=host;this.url=connectionURL(url);this.client=new PocketRisuClient(host);this.closed=false;this.busy=false;}
+  async connect(){const selector=await this.client.selection();const result=await this.request('/connect','POST',{selector});this.scope=result.scope;return this;}
   async request(path,method='GET',data) {
     requireValue(!this.closed,'UI가 닫혔습니다.'); requireValue(!this.busy,'이전 요청이 끝난 뒤 다시 시도하세요.');
     this.busy=true; let timer;
@@ -14,8 +17,9 @@ export class FullStore {
     // request even after the UI deadline; late completion cannot update a closed UI.
     const pending=(async()=>{
       try {
-        const response=await this.host.nativeFetch(this.url+path,{method,requestTimeoutMs:10000,headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})});
-        const text=await response.text(); requireValue(text.length<=524288,'응답 크기 제한 초과');
+        const token=await this.client.session();
+        const response=await this.host.nativeFetch(this.url+path,{method,requestTimeoutMs:10000,headers:{authorization:`Bearer ${token}`,'content-type':'application/json',...(this.scope?{'x-lore-character':encodeURIComponent(this.scope.characterId),'x-lore-chat':encodeURIComponent(this.scope.chatId)}:{})},...(data===undefined?{}:{body:JSON.stringify(data)})});
+        const text=new TextDecoder().decode(await readBounded(response,524288,{checkStatus:false}));
         const result=JSON.parse(text); requireValue(response.ok,result.error??`HTTP ${response.status}`,response.status);
         requireValue(!this.closed,'UI가 닫혔습니다.'); return result;
       } finally { this.busy=false; }
@@ -41,5 +45,5 @@ export class FullStore {
   retry(id){return this.request('/jobs/'+encodeURIComponent(id)+'/retry','POST',{});}
   dismissConflict(id){return this.request('/conflicts/'+encodeURIComponent(id),'DELETE');}
   cancel(id){return this.request('/jobs/'+encodeURIComponent(id)+'/cancel','POST',{});}
-  close(){this.closed=true;this.token='';}
+  close(){this.closed=true;this.scope=null;}
 }
