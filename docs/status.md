@@ -14,13 +14,13 @@
 
 ## 로컬 검증
 
-Node 테스트 42개: 원문·revision·범위·분기·큐 복구, 공급자별 요청 형식, Full HTTP 설정·독립 LLM 호출, 최종 문자열 주입, 예산·장애 처리. Python 릴리스 모의 테스트, Chromium/WebKit 각각 Lite/Full의 모바일 폭 UI와 자동 흐름도 사용한다. Full 브라우저 테스트는 원문 본문이 브라우저로 들어오면 실패한다.
+Node 테스트 43개: 원문·revision·범위·분기·큐 복구, 공급자별 요청 형식, Full HTTP 설정·독립 LLM 호출, 최종 문자열 주입, 예산·장애 처리. Python 릴리스 모의 테스트, Chromium/WebKit 각각 Lite/Full의 모바일 폭 UI와 자동 흐름도 사용한다. Full 브라우저 테스트는 원문 본문이 브라우저로 들어오면 실패한다.
 
 실제 유료 LLM이나 사용자 대화를 테스트에 보내지 않았다. 원본 PocketRisu 커밋의 API 계약을 확인했으나 실제 로그인 호스트 전체 설치·iPhone 장시간 검증과 의미적 기억 품질 평가는 별도다. 기존 API 자체의 전체 선택 채팅 응답과 재검증 비용은 남는다. Full은 서버 16 MiB, Lite는 브라우저 1 MiB/128개 상한이다.
 
 ## 발행 상태
 
-alpha.3 로컬 구현·패키징을 진행 중이다. 원격 push/CI/태그 Release와 다운로드 체크섬 결과가 아래에 기록되기 전에는 원격 발행 완료로 해석하지 않는다.
+alpha.3 로컬 구현·전체 검증·패키지 설치·격리 컨테이너 재시작 검증이 통과했다. 실제 PocketRisu의 msgpackr 1.11.9 encoder로 Unicode·undefined·타임스탬프·20/128/500개 배열 디코딩도 확인했고 작은 fixture를 회귀 테스트에 포함했다. 양쪽 SSH main push가 성공했으며 GitHub CI를 진행 중이다. 원격 push/CI/태그 Release와 다운로드 체크섬 결과가 아래에 기록되기 전에는 원격 발행 완료로 해석하지 않는다.
 
 이전 [alpha.2](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2)는 GitHub에서 실제 발행했다. 이 버전은 호스트 패치를 요구하므로 새 설치에는 alpha.3 이후를 사용한다. 이전 게시 파일과 태그는 덮어쓰지 않는다. GitHub PRIVATE 설정은 유지한다.
 

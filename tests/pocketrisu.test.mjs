@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {decodeChat,readBounded,confirmedSnapshot} from '../shared/pocketrisu.mjs';
@@ -31,4 +32,11 @@ test('Full reads only configured upstream and keeps raw chat on the server',asyn
  await assert.rejects(reader(store,scope,'world',{selector:{...selector,characterId:'other'},sessionToken:'x',boundaries:['m1']}),/Character scope/);
  assert.throws(()=>pocketRisuReader('http://user:secret@host'),/origin/);
  assert.equal((await reader(store,{...scope,chatId:'setup'},'world',{selector,sessionToken:'x',identityOnly:true,allowDiscovery:true})).chatId,'chat');
+});
+
+test('decodes fixture produced by the pinned PocketRisu MessagePack encoder',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/pocketrisu-chat.json',import.meta.url),'utf8'));
+ const chat=decodeChat(new Uint8Array(Buffer.from(fixture.base64,'base64')));
+ assert.equal(chat.id,'codec-fixture');assert.equal(chat.message.length,20);assert.equal(chat.message[19].data,'원문 Alice 19');
+ assert.equal(chat.message[0].time,1750000000000);assert.equal(chat.message[0].generationInfo.generationTime,1.25);assert.equal(chat.message[0].name,undefined);
 });
