@@ -28,3 +28,14 @@ test('provider timeout, output cap and invalid JSON do not corrupt memory',async
  const bad=createExtractor({url:'https://test.invalid',model:'test'},async()=>new Response('x'.repeat(70000)));
  await assert.rejects(bad(input),/64 KiB/);
 });
+test('re-extraction can restore invalidated canonical pages with current revision',async t=>{
+ const s=setup(t);await s.runExtraction(async()=>[proposal]);const original=s.list(scope).pages[0];
+ s.enqueue(scope,{eventId:'revision2',baseRevision:1,changes:[{...source,revision:2,text:'Alice is a doctor.'}]});
+ assert.equal(s.list(scope).pages.length,0);assert.equal(s.browse(scope,{folder:'people/crew'}).entries.length,1);
+ await s.runExtraction(async input=>{const page=input.pages.find(p=>p.id===original.id);assert.equal(page.active,false);return [{...proposal,id:page.id,expectedRevision:page.revision,body:'Alice is a doctor.',evidence:[{messageId:'m',revision:2,quote:'Alice is a doctor.'}]}];});
+ assert.match(s.context(scope).text,/doctor/);assert.doesNotMatch(s.context(scope).text,/pilot/);
+});
+test('required pages bypass query and never silently disappear at budget limits',t=>{
+ const s=new Store(':memory:');t.after(()=>s.close());s.put(scope,'p',{title:'Rules',body:'Mandatory rule',contextMode:'always'},0);
+ assert.match(s.context(scope,{query:'unrelated'}).text,/Mandatory/);assert.equal(s.context(scope,{query:'unrelated',budgetBytes:1}).requiredOverflow,true);
+});

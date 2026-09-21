@@ -107,7 +107,7 @@ function resolveLink(target,pages) {
 }
 function scorePage(page,query='') {
   if(!query.trim())return 1;
-  const words=[...new Set(wikiKey(query).split(/[^\p{L}\p{N}_-]+/u).filter(w=>w.length>1))].slice(0,24);
+  const words=[...new Set(wikiKey(query).split(/[^\p{L}\p{N}_-]+/u).filter(w=>w.length>0))].slice(0,24);
   const identities=[page.title,...(page.aliases??[]),page.path??''].map(wikiKey),body=wikiKey(page.body??'');
   return words.reduce((score,w)=>score+(identities.some(v=>v===w)?20:identities.some(v=>v.includes(w))?8:body.includes(w)?1:0),0);
 }
@@ -117,6 +117,7 @@ function markdownExport(page) {
 }
 function browsePages(pages,folder='',offset=0,limit=20) {
   requireValue(typeof folder==='string'&&(!folder||wikiPath(folder+'/_.md')),'Invalid folder');
+  requireValue(Number.isSafeInteger(offset)&&offset>=0&&Number.isInteger(limit)&&limit>=1&&limit<=128,'Invalid pagination');
   const prefix=folder?folder+'/':'',entries=new Map();
   for(const raw of pages){const p=pageDefaults(raw);if(!p.path.startsWith(prefix))continue;const tail=p.path.slice(prefix.length),slash=tail.indexOf('/');if(slash>=0){const name=tail.slice(0,slash),path=prefix+name;entries.set('folder:'+path,{type:'folder',path,name});}else entries.set('file:'+p.id,{type:'file',...p});}
   const all=[...entries.values()].sort((a,b)=>a.type.localeCompare(b.type)||a.path.localeCompare(b.path));
@@ -195,7 +196,7 @@ class LiteStore {
   async list({query='',offset=0,limit=20}={}) {
     boundedString(query,'query',200,true);
     requireValue(Number.isInteger(offset)&&offset>=0&&Number.isInteger(limit)&&limit>=1&&limit<=128,'Invalid pagination');
-    const matches=(await this.index()).filter(p=>scorePage(p,query)>0);
+    const matches=(await this.index()).filter(p=>scorePage(p,query)>0).sort((a,b)=>scorePage(b,query)-scorePage(a,query));
     return {pages:matches.slice(offset,offset+limit),hasMore:matches.length>offset+limit,nextOffset:matches.length>offset+limit?offset+limit:null};
   }
   async page(id) {
@@ -236,7 +237,7 @@ class LiteStore {
     boundedString(query,'query',200,true);
     const state=await this.state(),pages=[];
     for(const row of state.pages){if(row.contextMode==='always'||scorePage(row,query)>0)pages.push(await this.page(row.id));}
-    const pendingJobs=(state.jobs??[]).filter(j=>['queued','running','failed'].includes(j.state)).length;
+    const pendingJobs=(state.jobs??[]).filter(j=>['queued','running','failed','cancelled'].includes(j.state)).length;
     return {...compileContext(pages,{budgetBytes}),fresh:pendingJobs===0,pendingJobs,candidateLimitReached:false};
   }
   bind(scope){return this.serial(async()=>{const state=await this.state();if(state.scope)requireValue(JSON.stringify(state.scope)===JSON.stringify(scope),'노트북이 다른 채팅에 연결되어 있습니다.',409);else await this.storage.setItem(this.prefix+'index',{...state,scope});});}
@@ -262,7 +263,9 @@ class LiteStore {
     return {cursor:delta.cursor,reset:delta.reset,hasMore:delta.hasMore};
   });}
   async jobs(){return (await this.state()).jobs??[];}
-  async conflicts(){const state=await this.state();return Promise.all((state.conflicts??[]).map(key=>this.storage.getItem(key)));}
+  async conflicts(){const state=await this.state();return Promise.all((state.conflicts??[]).map(async key=>({...await this.storage.getItem(key),id:key})));}
+  retry(id){return this.serial(async()=>{const state=await this.state();await this.storage.setItem(this.prefix+'index',{...state,jobs:(state.jobs??[]).map(j=>j.id===id&&['failed','cancelled'].includes(j.state)?{...j,state:'queued',attempts:0,error:null}:j)});});}
+  dismissConflict(id){return this.serial(async()=>{const state=await this.state();requireValue(state.conflicts?.includes(id),'Conflict not found',404);await this.storage.setItem(this.prefix+'index',{...state,conflicts:state.conflicts.filter(k=>k!==id)});await this.storage.removeItem(id).catch(()=>{});});}
   cancel(id){return this.serial(async()=>{const state=await this.state();await this.storage.setItem(this.prefix+'index',{...state,jobs:(state.jobs??[]).map(j=>j.id===id?{...j,state:'cancelled'}:j)});});}
   async process(extractor,{signal}={}){
     if(this.processing)return false;this.processing=true;let job;
@@ -345,6 +348,8 @@ class FullStore {
   links(id){return this.request('/wiki/'+encodeURIComponent(id)+'/links');}
   async jobs(){return (await this.request('/jobs')).jobs;}
   async conflicts(){return (await this.request('/conflicts')).conflicts;}
+  retry(id){return this.request('/jobs/'+encodeURIComponent(id)+'/retry','POST',{});}
+  dismissConflict(id){return this.request('/conflicts/'+encodeURIComponent(id),'DELETE');}
   cancel(id){return this.request('/jobs/'+encodeURIComponent(id)+'/cancel','POST',{});}
   close(){this.closed=true;this.token='';}
 }
@@ -381,7 +386,7 @@ function openUI({edition,host,connect,automation,onClose}) {
   :focus-visible{outline:2px solid #9ecde9;outline-offset:3px}
   </style><main class="lore"><header><h1>LORE ${edition}</h1><button data-stop>자동 기억 중지</button><button data-close>닫기</button></header>
   <p>대화에서 이어지는 인물 · 사건 · 장면의 위키</p>
-  <div data-connect></div><output role="status"></output><div data-work hidden>
+  <button data-host-scope>현재 채팅 ID 확인</button><div data-connect></div><output role="status"></output><div data-work hidden>
   <details><summary>자동 기억 설정 · 작업 상태</summary><p>현재 채팅의 확정된 메시지를 수집하고 관련 기억을 생성 요청에 넣습니다. 처음 시작하면 이전 대화도 순서대로 처리합니다.</p>
   <small>자동 연결에는 PocketRisu LORE API 확장이 필요합니다. 설치: docs/automation.md · 탭 종료 전 전달되지 않은 메시지는 다시 연결할 때 수집합니다.</small>
   <div data-llm></div><label>기억 토큰 예산<input data-memory-budget type="number" value="1024" min="128" max="4096"></label>
@@ -441,8 +446,9 @@ function openUI({edition,host,connect,automation,onClose}) {
   else{connection.innerHTML='<label>노트북 ID<input data-notebook value="default" maxlength="160"></label><button data-start>노트북 열기</button><small>자동 기억 시작 시 현재 채팅에 연결됩니다. 다른 채팅은 다른 노트북을 사용하세요.</small>';$('[data-llm]').innerHTML='<label>LLM chat/completions URL<input data-llm-url type="url" placeholder="https://your-provider.example/v1/chat/completions"></label><label>모델<input data-model maxlength="160"></label><label>API key<input data-api-key type="password" autocomplete="off"></label><small>키는 저장하지 않습니다. 원문 최대 128개, 미완료 작업 최대 4개. 탭을 닫으면 Lite 작업은 중단됩니다.</small>';}
   action('[data-start]',async()=>{store?.close();workspace.hidden=true;page=null;offset=0;tree=false;$('[data-editor]').hidden=true;$('[data-preview]').textContent='';connectionOptions=edition==='Full'?{url:$('[data-url]').value,token:$('[data-token]').value}:{notebook:$('[data-notebook]').value};store=await connect(connectionOptions);const identity=await store.identity();if(!alive){store.close();return;}workspace.hidden=false;const visibility=$('[data-visibility]');visibility.replaceChildren();for(const value of new Set(['public',identity.audience])){const option=document.createElement('option');option.value=value;option.textContent=value;visibility.append(option);}await list();say('열린 범위: '+JSON.stringify(identity.scope));$('[data-auto-status]').textContent=automation?.status().message??'자동 기억 꺼짐';});
   action('[data-auto]',async()=>{await automation.start({...connectionOptions,memoryBudget:Number($('[data-memory-budget]').value),llm:edition==='Lite'?{url:$('[data-llm-url]').value,model:$('[data-model]').value,apiKey:$('[data-api-key]').value,jsonMode:false}:undefined});if(alive){$('[data-auto-status]').textContent=automation.status().message;say('자동 기억을 시작했습니다. 창을 닫아도 현재 탭에서는 계속 동작합니다.');}});
+  action('[data-host-scope]',async()=>say('현재 채팅 ID: '+JSON.stringify(await automation.scope())));
   action('[data-stop]',async()=>{await automation.stop();if(alive)$('[data-auto-status]').textContent=automation.status().message;});
-  action('[data-jobs]',async()=>{const jobs=await store.jobs(),conflicts=await store.conflicts();if(!alive)return;$('[data-auto-status]').textContent=JSON.stringify(automation.status(),null,2);const list=$('[data-job-list]');list.replaceChildren();for(const j of jobs){const row=document.createElement('div');row.textContent=`${j.state} · 시도 ${j.attempts} ${j.error??''} `;if(['queued','running','failed'].includes(j.state)){const button=document.createElement('button');button.textContent='취소';button.onclick=()=>run(async()=>{await store.cancel(j.id);say('작업을 취소했습니다.');});row.append(button);}list.append(row);}const out=$('[data-conflicts]');out.replaceChildren();for(const c of conflicts){const detail=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='교정과 충돌: '+c.proposal.title;pre.textContent=JSON.stringify(c.proposal,null,2);detail.append(summary,pre);out.append(detail);}});
+  action('[data-jobs]',async()=>{const jobs=await store.jobs(),conflicts=await store.conflicts();if(!alive)return;$('[data-auto-status]').textContent=JSON.stringify(automation.status(),null,2);const list=$('[data-job-list]');list.replaceChildren();for(const j of jobs){const row=document.createElement('div');row.textContent=`${j.state} · 시도 ${j.attempts} ${j.error??''} `;if(['queued','running','failed'].includes(j.state)){const button=document.createElement('button');button.textContent='취소';button.onclick=()=>run(async()=>{await store.cancel(j.id);say('작업을 취소했습니다.');});row.append(button);}if(['failed','cancelled'].includes(j.state)){const retry=document.createElement('button');retry.textContent='재시도';retry.onclick=()=>run(async()=>{await store.retry(j.id);say('작업을 다시 대기열에 넣었습니다.');});row.append(retry);}list.append(row);}const out=$('[data-conflicts]');out.replaceChildren();for(const c of conflicts){const detail=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='교정과 충돌: '+c.proposal.title;pre.textContent=JSON.stringify(c.proposal,null,2);const dismiss=document.createElement('button');dismiss.textContent='검토 완료 · 제안 제거';dismiss.onclick=()=>run(async()=>{await store.dismissConflict(c.id);detail.remove();});detail.append(summary,pre,dismiss);out.append(detail);}});
   const close=()=>{if(!alive)return;alive=false;store?.close();store=null;page=null;connectionOptions=null;for(const url of urls)URL.revokeObjectURL(url);urls.clear();root.remove();onClose?.();};
   $('[data-close]').onclick=()=>{close();host.hideContainer?.();};
   return {close,root};
@@ -470,7 +476,7 @@ class AutoMemory {
     }catch(error){await this.stop();throw error;}
   }
   async stop(){
-    this.epoch++;this.state={...this.state,enabled:false,message:'자동 기억 꺼짐'};clearInterval(this.timer);this.controller?.abort();
+    this.epoch++;this.receipt=null;this.state={...this.state,enabled:false,message:'자동 기억 꺼짐'};clearInterval(this.timer);this.controller?.abort();
     if(this.registered)await this.host.removeRisuReplacer?.('beforeRequest',this.beforeHook);this.registered=false;
     if(this.bodyRegistration?.id)await this.host.unregisterBodyIntercepter?.(this.bodyRegistration.id);this.bodyRegistration=null;
     this.extractor=null;this.store=null;
@@ -505,7 +511,7 @@ class AutoMemory {
       requireValue(budget.fits,'기억 또는 전체 프롬프트 예산 초과 · 주입을 생략했습니다.');
       const current=await this.host.getLoreChatDelta(cursor,'state');requireValue(current.valid&&sameChat(current,this.scope),'주입 전 채팅이 변경되었습니다.');
       if(epoch!==this.epoch||expired)return messages;
-      this.lastCursor=cursor;this.state={...this.state,message:context.fresh?'관련 기억을 주입했습니다.':'완료된 기억을 주입했습니다. 아직 반영되지 않은 대화가 있습니다.',included:context.included,excluded:context.excluded,budget};
+      this.receipt={memory,cursor,epoch};this.state={...this.state,message:context.fresh?'관련 기억을 주입했습니다.':'완료된 기억을 주입했습니다. 아직 반영되지 않은 대화가 있습니다.',included:context.included,excluded:context.excluded,budget};
       let at=clean.findLastIndex(m=>m.role==='user');if(at<0)at=clean.length;
       return [...clean.slice(0,at),{role:'system',content:memory},...clean.slice(at)];
     })();
@@ -519,7 +525,8 @@ class AutoMemory {
     const safe={...body,messages:clean},epoch=this.epoch;
     try{return await this.deadline((async()=>{
       requireValue(this.state.enabled&&!body.tools&&!body.functions&&!body.response_format?.json_schema,'지원하지 않는 요청 형식');
-      const state=await this.host.getLoreChatDelta(this.lastCursor,'state');requireValue(state.valid&&sameChat(state,this.scope),'채팅 변경');
+      requireValue(this.receipt?.epoch===epoch&&body.messages.some(m=>m.role==='system'&&typeof m.content==='string'&&m.content.includes(this.receipt.memory)),'이전 요청의 기억');
+      const state=await this.host.getLoreChatDelta(this.receipt.cursor,'state');requireValue(state.valid&&sameChat(state,this.scope),'채팅 변경');
       const budget=await this.host.checkLoreBudget(body.messages,'',this.memoryBudget,Number(body.max_completion_tokens??body.max_tokens??0));
       requireValue(budget.fits&&epoch===this.epoch,'최종 요청 예산 초과');this.state={...this.state,finalBudget:budget};return body;
     })());}catch{this.state={...this.state,message:'최종 요청 검증 실패 · LORE 기억을 제외하고 채팅을 계속합니다.'};return safe;}
@@ -530,7 +537,7 @@ async function install(host,edition) {
   let ui=null,alive=true;const registrations=[],notebooks=new Map(),runtime=new AutoMemory(host);
   const getStore=async options=>{if(edition==='Full')return new FullStore(host,options.url,options.token);if(!notebooks.has(options.notebook))notebooks.set(options.notebook,new LiteStore(await host.getLocalPluginStorage(),options.notebook));return notebooks.get(options.notebook);};
   let autoStore=null,llmBusy=false;
-  const automation={status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
+  const automation={scope:()=>host.getLoreChatDelta(null,'identity'),status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
     await automation.stop();autoStore=await getStore(options);
     // Native fetch transfers a response through RPC; avoid nonserializable signals
     // and never overlap an unabortable provider request after its local deadline.

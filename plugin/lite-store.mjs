@@ -13,7 +13,7 @@ export class LiteStore {
   async list({query='',offset=0,limit=20}={}) {
     boundedString(query,'query',200,true);
     requireValue(Number.isInteger(offset)&&offset>=0&&Number.isInteger(limit)&&limit>=1&&limit<=128,'Invalid pagination');
-    const matches=(await this.index()).filter(p=>scorePage(p,query)>0);
+    const matches=(await this.index()).filter(p=>scorePage(p,query)>0).sort((a,b)=>scorePage(b,query)-scorePage(a,query));
     return {pages:matches.slice(offset,offset+limit),hasMore:matches.length>offset+limit,nextOffset:matches.length>offset+limit?offset+limit:null};
   }
   async page(id) {
@@ -54,7 +54,7 @@ export class LiteStore {
     boundedString(query,'query',200,true);
     const state=await this.state(),pages=[];
     for(const row of state.pages){if(row.contextMode==='always'||scorePage(row,query)>0)pages.push(await this.page(row.id));}
-    const pendingJobs=(state.jobs??[]).filter(j=>['queued','running','failed'].includes(j.state)).length;
+    const pendingJobs=(state.jobs??[]).filter(j=>['queued','running','failed','cancelled'].includes(j.state)).length;
     return {...compileContext(pages,{budgetBytes}),fresh:pendingJobs===0,pendingJobs,candidateLimitReached:false};
   }
   bind(scope){return this.serial(async()=>{const state=await this.state();if(state.scope)requireValue(JSON.stringify(state.scope)===JSON.stringify(scope),'노트북이 다른 채팅에 연결되어 있습니다.',409);else await this.storage.setItem(this.prefix+'index',{...state,scope});});}
@@ -80,7 +80,9 @@ export class LiteStore {
     return {cursor:delta.cursor,reset:delta.reset,hasMore:delta.hasMore};
   });}
   async jobs(){return (await this.state()).jobs??[];}
-  async conflicts(){const state=await this.state();return Promise.all((state.conflicts??[]).map(key=>this.storage.getItem(key)));}
+  async conflicts(){const state=await this.state();return Promise.all((state.conflicts??[]).map(async key=>({...await this.storage.getItem(key),id:key})));}
+  retry(id){return this.serial(async()=>{const state=await this.state();await this.storage.setItem(this.prefix+'index',{...state,jobs:(state.jobs??[]).map(j=>j.id===id&&['failed','cancelled'].includes(j.state)?{...j,state:'queued',attempts:0,error:null}:j)});});}
+  dismissConflict(id){return this.serial(async()=>{const state=await this.state();requireValue(state.conflicts?.includes(id),'Conflict not found',404);await this.storage.setItem(this.prefix+'index',{...state,conflicts:state.conflicts.filter(k=>k!==id)});await this.storage.removeItem(id).catch(()=>{});});}
   cancel(id){return this.serial(async()=>{const state=await this.state();await this.storage.setItem(this.prefix+'index',{...state,jobs:(state.jobs??[]).map(j=>j.id===id?{...j,state:'cancelled'}:j)});});}
   async process(extractor,{signal}={}){
     if(this.processing)return false;this.processing=true;let job;

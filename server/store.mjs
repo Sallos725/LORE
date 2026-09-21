@@ -41,14 +41,14 @@ export class Store {
     requireValue(page && canRead(page, audience), 'Page not found', 404);
     return page;
   }
-  list(scope, {query = '', offset = 0, limit = 20, audience = 'world', includeBody = false} = {}) {
+  list(scope, {query = '', offset = 0, limit = 20, audience = 'world', includeBody = false, includeInactive = false} = {}) {
     boundedString(query, 'query', 200, true);
     requireValue(Number.isSafeInteger(offset) && offset >= 0 && Number.isInteger(limit) && limit >= 1 && limit <= 128, 'Invalid pagination');
     const rows = this.db.prepare(`SELECT data FROM pages WHERE scope=?
       AND (json_extract(data,'$.visibility')='public' OR json_extract(data,'$.visibility')=?)
-      AND json_extract(data,'$.active')=1
+      AND (? OR json_extract(data,'$.active')=1)
       AND lore_score(data,?)>0
-      ORDER BY lore_score(data,?) DESC,json_extract(data,'$.pinned') DESC,id LIMIT ? OFFSET ?`).all(scopeKey(scope), audience, query, query, limit + 1, offset);
+      ORDER BY lore_score(data,?) DESC,json_extract(data,'$.pinned') DESC,id LIMIT ? OFFSET ?`).all(scopeKey(scope), audience, Number(includeInactive), query, query, limit + 1, offset);
     const hasMore = rows.length > limit;
     const pages = rows.slice(0, limit).map(row => { const p = pageDefaults(JSON.parse(row.data)); if (!includeBody) { delete p.body; delete p.evidence; } return p; });
     return {pages, hasMore, nextOffset: hasMore ? offset + limit : null, scopeRevision: this.head(scope)};
@@ -67,14 +67,14 @@ export class Store {
       valid.aliases=aliasesOf(valid.aliases,valid.title);
       if(previous&&previous.title!==valid.title)valid.aliases=aliasesOf([...valid.aliases,previous.title],valid.title);
       valid.path=wikiPath(valid.path??previous?.path??`${valid.kind}/${id}.md`);
-      requireValue(!this.metadata(scope,audience).some(p=>p.id!==id&&p.path===valid.path),'Path already exists',409);
+      requireValue(!this.db.prepare("SELECT id FROM pages WHERE scope=? AND id<>? AND json_extract(data,'$.path')=?").get(key,id,valid.path),'Path already exists',409);
       const page = {...valid, id, revision: expectedRevision + 1, origin: 'manual', evidence: previous?.evidence??[], active: previous?.active??true};
       this.save(key, page);
       return page;
     });
   }
   metadata(scope,audience='world') {
-    return this.db.prepare("SELECT json_remove(data,'$.body','$.evidence') AS data FROM pages WHERE scope=? AND json_extract(data,'$.active')=1 AND (json_extract(data,'$.visibility')='public' OR json_extract(data,'$.visibility')=?)").all(scopeKey(scope),audience).map(r=>pageDefaults(JSON.parse(r.data)));
+    return this.db.prepare("SELECT json_remove(data,'$.body','$.evidence') AS data FROM pages WHERE scope=? AND (json_extract(data,'$.visibility')='public' OR json_extract(data,'$.visibility')=?)").all(scopeKey(scope),audience).map(r=>pageDefaults(JSON.parse(r.data)));
   }
   resolve(scope,target,audience='world'){return resolveLink(target,this.metadata(scope,audience));}
   browse(scope,options={}){return browsePages(this.metadata(scope,options.audience),options.folder,options.offset,options.limit);}
@@ -88,12 +88,13 @@ export class Store {
   history(scope, id, audience = 'world', offset = 0) {
     this.page(scope, id, audience);
     requireValue(Number.isSafeInteger(offset) && offset >= 0, 'Invalid offset');
-    return this.db.prepare('SELECT data FROM history WHERE scope=? AND id=? ORDER BY revision DESC LIMIT 20 OFFSET ?')
+    return this.db.prepare('SELECT data FROM history WHERE scope=? AND id=? ORDER BY revision DESC LIMIT 5 OFFSET ?')
       .all(scopeKey(scope), id, offset).map(r => JSON.parse(r.data)).filter(p => canRead(p, audience));
   }
   context(scope, options = {}) {
-    const candidates = this.list(scope, {...options, offset: 0, limit: 128, includeBody: true});
-    const required=this.metadata(scope,options.audience??'world').filter(p=>p.contextMode==='always');
+    const candidates = this.list(scope, {...options, offset: 0, limit: 128, includeBody: true,includeInactive:false});
+    const required=this.metadata(scope,options.audience??'world').filter(p=>p.contextMode==='always'&&p.active!==false);
+    if(required.length>128)return {...compileContext([] ,options),requiredOverflow:true,fresh:false,pendingJobs:0,candidateLimitReached:true,excluded:[{reason:'too-many-required-pages'}]};
     const pages=[...required.map(p=>this.page(scope,p.id,options.audience)),...candidates.pages.filter(p=>!required.some(r=>r.id===p.id))];
     const pending = this.db.prepare("SELECT count(*) AS n FROM jobs j WHERE scope=? AND state IN ('queued','running','failed','cancelled') AND EXISTS (SELECT 1 FROM json_each(j.payload,'$.changes') c JOIN sources s ON s.scope=j.scope AND s.id=json_extract(c.value,'$.id') WHERE s.deleted=0 AND s.revision=json_extract(c.value,'$.revision'))").get(scopeKey(scope)).n;
     return {...compileContext(pages, options), scopeRevision: candidates.scopeRevision, pendingJobs: pending, fresh: pending === 0, candidateLimitReached: candidates.hasMore};
@@ -152,6 +153,8 @@ export class Store {
     const row = this.db.prepare('SELECT id,eventId,state,attempts,error,createdAt,updatedAt FROM jobs WHERE scope=? AND id=?').get(scopeKey(scope), id);
     requireValue(row, 'Job not found', 404); return row;
   }
+  retry(scope,id){this.job(scope,id);this.db.prepare("UPDATE jobs SET state='queued',attempts=0,error=NULL,updatedAt=? WHERE scope=? AND id=? AND state IN ('failed','cancelled')").run(Date.now(),scopeKey(scope),id);return this.job(scope,id);}
+  dismissConflict(scope,id,audience='world'){requireValue(this.conflicts(scope,audience).some(c=>c.id===id),'Conflict not found',404);this.db.prepare('DELETE FROM proposals WHERE scope=? AND id=?').run(scopeKey(scope),id);return {ok:true};}
   cancel(scope, id) {
     this.job(scope, id);
     this.db.prepare("UPDATE jobs SET state='cancelled',updatedAt=? WHERE scope=? AND id=? AND state IN ('queued','running')").run(Date.now(), scopeKey(scope), id);
@@ -159,7 +162,7 @@ export class Store {
     return this.job(scope, id);
   }
   runOne() {
-    const job = this.db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY createdAt,id LIMIT 1").get();
+    const job = this.db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").get();
     if (!job) return false;
     this.db.prepare("UPDATE jobs SET state='running',attempts=attempts+1,updatedAt=? WHERE id=?").run(Date.now(), job.id);
     try {

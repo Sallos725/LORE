@@ -57,6 +57,7 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       }
       if(resource==='browse'&&req.method==='GET')return json(res,200,store.browse(scope,{audience,folder:url.searchParams.get('folder')??'',offset:Number(url.searchParams.get('offset')??0),limit:20}));
       if(resource==='resolve'&&req.method==='GET')return json(res,200,store.resolve(scope,url.searchParams.get('target')??'',audience));
+      if(resource==='conflicts'&&id&&req.method==='DELETE')return json(res,200,store.dismissConflict(scope,id,audience));
       if(resource==='conflicts'&&req.method==='GET')return json(res,200,{conflicts:store.conflicts(scope,audience)});
       if(resource==='jobs'&&!id&&req.method==='GET')return json(res,200,{jobs:store.jobs(scope,audience)});
       if (resource === 'wiki') {
@@ -80,6 +81,7 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
         requireValue(principal.ingest === true || principal.collect === true, 'Collection credential required', 403);
         requireValue(store.jobs(scope,audience).some(j=>j.id===id), 'Job not found',404);
         if (req.method === 'GET' && !action) return json(res,200,store.job(scope,id));
+        if (req.method === 'POST' && action === 'retry') return json(res,200,store.retry(scope,id));
         if (req.method === 'POST' && action === 'cancel') return json(res,200,store.cancel(scope,id));
       }
       json(res,404,{error:'Not found'});

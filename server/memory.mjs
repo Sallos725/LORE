@@ -15,7 +15,7 @@ export function installMemory(Store) {
     const scopeObject=Object.fromEntries(['installationId','userId','characterId','chatId','branchId'].map((k,i)=>[k,scope[i]]));
     const audience=sources.find(s=>s.visibility!=='public')?.visibility??'world';
     const query=sources.map(s=>s.text).join(' ').slice(-200);
-    const pages=this.list(scopeObject,{query,limit:12,includeBody:true,audience}).pages.filter(p=>p.origin!=='source-quote');
+    const pages=this.list(scopeObject,{query,limit:12,includeBody:true,includeInactive:true,audience}).pages.filter(p=>p.origin!=='source-quote');
     const input={sources:[...sources],pages:[]};
     for(const p of pages){
       const extra=[];
@@ -27,7 +27,7 @@ export function installMemory(Store) {
   };
   Store.prototype.runExtraction=async function(extractor){
     if(this.extractionRunning)return false;
-    const job=this.db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY createdAt,id LIMIT 1").get();if(!job)return false;
+    const job=this.db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").get();if(!job)return false;
     this.extractionRunning=true;const controller=new AbortController();this.activeExtraction={id:job.id,controller};
     this.db.prepare("UPDATE jobs SET state='running',attempts=attempts+1,updatedAt=? WHERE id=?").run(Date.now(),job.id);
     try{
@@ -59,5 +59,5 @@ export function installMemory(Store) {
     return true;
   };
   Store.prototype.jobs=function(scope,audience='world'){return this.db.prepare('SELECT id,eventId,state,attempts,error,updatedAt,payload FROM jobs WHERE scope=? ORDER BY createdAt DESC LIMIT 100').all(scopeKey(scope)).filter(j=>JSON.parse(j.payload).changes.every(c=>canRead(c,audience))).slice(0,20).map(({payload,...j})=>j);};
-  Store.prototype.conflicts=function(scope,audience='world'){return this.db.prepare('SELECT id,job,page,data,reason FROM proposals WHERE scope=? ORDER BY rowid DESC LIMIT 100').all(scopeKey(scope)).map(r=>({...r,proposal:JSON.parse(r.data),data:undefined})).filter(r=>canRead(r.proposal,audience));};
+  Store.prototype.conflicts=function(scope,audience='world'){return this.db.prepare('SELECT id,job,page,data,reason FROM proposals WHERE scope=? ORDER BY rowid DESC LIMIT 10').all(scopeKey(scope)).map(r=>({...r,proposal:JSON.parse(r.data),data:undefined})).filter(r=>canRead(r.proposal,audience));};
 }

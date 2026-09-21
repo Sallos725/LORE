@@ -7,7 +7,7 @@ export async function install(host,edition) {
   let ui=null,alive=true;const registrations=[],notebooks=new Map(),runtime=new AutoMemory(host);
   const getStore=async options=>{if(edition==='Full')return new FullStore(host,options.url,options.token);if(!notebooks.has(options.notebook))notebooks.set(options.notebook,new LiteStore(await host.getLocalPluginStorage(),options.notebook));return notebooks.get(options.notebook);};
   let autoStore=null,llmBusy=false;
-  const automation={status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
+  const automation={scope:()=>host.getLoreChatDelta(null,'identity'),status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
     await automation.stop();autoStore=await getStore(options);
     // Native fetch transfers a response through RPC; avoid nonserializable signals
     // and never overlap an unabortable provider request after its local deadline.

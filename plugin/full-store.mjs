@@ -36,6 +36,8 @@ export class FullStore {
   links(id){return this.request('/wiki/'+encodeURIComponent(id)+'/links');}
   async jobs(){return (await this.request('/jobs')).jobs;}
   async conflicts(){return (await this.request('/conflicts')).conflicts;}
+  retry(id){return this.request('/jobs/'+encodeURIComponent(id)+'/retry','POST',{});}
+  dismissConflict(id){return this.request('/conflicts/'+encodeURIComponent(id),'DELETE');}
   cancel(id){return this.request('/jobs/'+encodeURIComponent(id)+'/cancel','POST',{});}
   close(){this.closed=true;this.token='';}
 }

@@ -46,7 +46,7 @@ export function resolveLink(target,pages) {
 }
 export function scorePage(page,query='') {
   if(!query.trim())return 1;
-  const words=[...new Set(wikiKey(query).split(/[^\p{L}\p{N}_-]+/u).filter(w=>w.length>1))].slice(0,24);
+  const words=[...new Set(wikiKey(query).split(/[^\p{L}\p{N}_-]+/u).filter(w=>w.length>0))].slice(0,24);
   const identities=[page.title,...(page.aliases??[]),page.path??''].map(wikiKey),body=wikiKey(page.body??'');
   return words.reduce((score,w)=>score+(identities.some(v=>v===w)?20:identities.some(v=>v.includes(w))?8:body.includes(w)?1:0),0);
 }
@@ -56,6 +56,7 @@ export function markdownExport(page) {
 }
 export function browsePages(pages,folder='',offset=0,limit=20) {
   requireValue(typeof folder==='string'&&(!folder||wikiPath(folder+'/_.md')),'Invalid folder');
+  requireValue(Number.isSafeInteger(offset)&&offset>=0&&Number.isInteger(limit)&&limit>=1&&limit<=128,'Invalid pagination');
   const prefix=folder?folder+'/':'',entries=new Map();
   for(const raw of pages){const p=pageDefaults(raw);if(!p.path.startsWith(prefix))continue;const tail=p.path.slice(prefix.length),slash=tail.indexOf('/');if(slash>=0){const name=tail.slice(0,slash),path=prefix+name;entries.set('folder:'+path,{type:'folder',path,name});}else entries.set('file:'+p.id,{type:'file',...p});}
   const all=[...entries.values()].sort((a,b)=>a.type.localeCompare(b.type)||a.path.localeCompare(b.path));

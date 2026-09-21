@@ -22,7 +22,7 @@ export class AutoMemory {
     }catch(error){await this.stop();throw error;}
   }
   async stop(){
-    this.epoch++;this.state={...this.state,enabled:false,message:'자동 기억 꺼짐'};clearInterval(this.timer);this.controller?.abort();
+    this.epoch++;this.receipt=null;this.state={...this.state,enabled:false,message:'자동 기억 꺼짐'};clearInterval(this.timer);this.controller?.abort();
     if(this.registered)await this.host.removeRisuReplacer?.('beforeRequest',this.beforeHook);this.registered=false;
     if(this.bodyRegistration?.id)await this.host.unregisterBodyIntercepter?.(this.bodyRegistration.id);this.bodyRegistration=null;
     this.extractor=null;this.store=null;
@@ -57,7 +57,7 @@ export class AutoMemory {
       requireValue(budget.fits,'기억 또는 전체 프롬프트 예산 초과 · 주입을 생략했습니다.');
       const current=await this.host.getLoreChatDelta(cursor,'state');requireValue(current.valid&&sameChat(current,this.scope),'주입 전 채팅이 변경되었습니다.');
       if(epoch!==this.epoch||expired)return messages;
-      this.lastCursor=cursor;this.state={...this.state,message:context.fresh?'관련 기억을 주입했습니다.':'완료된 기억을 주입했습니다. 아직 반영되지 않은 대화가 있습니다.',included:context.included,excluded:context.excluded,budget};
+      this.receipt={memory,cursor,epoch};this.state={...this.state,message:context.fresh?'관련 기억을 주입했습니다.':'완료된 기억을 주입했습니다. 아직 반영되지 않은 대화가 있습니다.',included:context.included,excluded:context.excluded,budget};
       let at=clean.findLastIndex(m=>m.role==='user');if(at<0)at=clean.length;
       return [...clean.slice(0,at),{role:'system',content:memory},...clean.slice(at)];
     })();
@@ -71,7 +71,8 @@ export class AutoMemory {
     const safe={...body,messages:clean},epoch=this.epoch;
     try{return await this.deadline((async()=>{
       requireValue(this.state.enabled&&!body.tools&&!body.functions&&!body.response_format?.json_schema,'지원하지 않는 요청 형식');
-      const state=await this.host.getLoreChatDelta(this.lastCursor,'state');requireValue(state.valid&&sameChat(state,this.scope),'채팅 변경');
+      requireValue(this.receipt?.epoch===epoch&&body.messages.some(m=>m.role==='system'&&typeof m.content==='string'&&m.content.includes(this.receipt.memory)),'이전 요청의 기억');
+      const state=await this.host.getLoreChatDelta(this.receipt.cursor,'state');requireValue(state.valid&&sameChat(state,this.scope),'채팅 변경');
       const budget=await this.host.checkLoreBudget(body.messages,'',this.memoryBudget,Number(body.max_completion_tokens??body.max_tokens??0));
       requireValue(budget.fits&&epoch===this.epoch,'최종 요청 예산 초과');this.state={...this.state,finalBudget:budget};return body;
     })());}catch{this.state={...this.state,message:'최종 요청 검증 실패 · LORE 기억을 제외하고 채팅을 계속합니다.'};return safe;}
