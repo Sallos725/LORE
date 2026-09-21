@@ -69,7 +69,7 @@ export class Store {
   }
   context(scope, options = {}) {
     const candidates = this.list(scope, {...options, offset: 0, limit: 128, includeBody: true});
-    const pending = this.db.prepare("SELECT count(*) AS n FROM jobs WHERE scope=? AND state IN ('queued','running','failed')").get(scopeKey(scope)).n;
+    const pending = this.db.prepare("SELECT count(*) AS n FROM jobs WHERE scope=? AND state IN ('queued','running','failed','cancelled')").get(scopeKey(scope)).n;
     return {...compileContext(candidates.pages, options), scopeRevision: candidates.scopeRevision, pendingJobs: pending, fresh: pending === 0, candidateLimitReached: candidates.hasMore};
   }
   source(scope, id, rev, audience = 'world') {
