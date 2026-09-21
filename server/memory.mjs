@@ -27,8 +27,14 @@ export function installMemory(Store) {
   };
   Store.prototype.runExtraction=async function(extractor,{select}={}){
     if(this.extractionRunning)return false;
-    const job=select?this.db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 128").all().find(j=>select(j)):this.db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").get();if(!job)return false;
-    if(select)extractor=select(job);
+    let job;
+    // Iterate the bounded queue without loading every payload. An unconfigured
+    // scope must not starve later scopes that have a working extractor.
+    for(const candidate of this.db.prepare("SELECT * FROM jobs WHERE state='queued' ORDER BY rowid").iterate()){
+      const selected=select?select(candidate):extractor;
+      if(selected){job=candidate;extractor=selected;break;}
+    }
+    if(!job)return false;
     this.extractionRunning=true;const controller=new AbortController();this.activeExtraction={id:job.id,controller};
     this.db.prepare("UPDATE jobs SET state='running',attempts=attempts+1,updatedAt=? WHERE id=?").run(Date.now(),job.id);
     try{

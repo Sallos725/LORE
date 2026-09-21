@@ -39,3 +39,12 @@ test('required pages bypass query and never silently disappear at budget limits'
  const s=new Store(':memory:');t.after(()=>s.close());s.put(scope,'p',{title:'Rules',body:'Mandatory rule',contextMode:'always'},0);
  assert.match(s.context(scope,{query:'unrelated'}).text,/Mandatory/);assert.equal(s.context(scope,{query:'unrelated',budgetBytes:1}).requiredOverflow,true);
 });
+
+test('unconfigured scopes cannot starve ready jobs beyond the first 128',async t=>{
+ const s=new Store(':memory:');t.after(()=>s.close());
+ for(let i=0;i<128;i++)s.enqueue(scope,{eventId:'blocked'+i,baseRevision:i,changes:[{...source,id:'m'+i}]});
+ const ready={...scope,chatId:'ready'};s.enqueue(ready,{eventId:'ready',baseRevision:0,changes:[source]});
+ let calls=0;const extract=async()=>{calls++;return [proposal];};
+ assert.equal(await s.runExtraction(null,{select:job=>JSON.parse(job.scope)[3]==='ready'?extract:null}),true);
+ assert.equal(calls,1);assert.equal(s.jobs(ready)[0].state,'completed');assert.equal(s.jobs(scope)[0].attempts,0);
+});

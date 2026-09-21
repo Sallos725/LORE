@@ -63,3 +63,16 @@ test('mandatory pages ignore search and overflow refuses incomplete context',asy
   assert.match((await f.store.context({query:'unrelated'})).text,/Mandatory/);
   const context=await f.store.context({query:'unrelated',budgetBytes:1});assert.equal(context.requiredOverflow,true);assert.equal(context.text,'');
 });
+
+test('a late final check cannot claim injection after the request deadline',async()=>{
+ const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
+ try{
+  await runtime.before(messages,'model');while(f.store.processing)await new Promise(r=>setTimeout(r,1));
+  await runtime.before(messages,'model');assert.ok(runtime.receipt);
+  let release;const capture=runtime.client.capture.bind(runtime.client);
+  runtime.client.capture=async(...args)=>{await new Promise(r=>release=r);return capture(...args);};
+  const deadline=runtime.deadline.bind(runtime);runtime.deadline=work=>deadline(work,10);
+  assert.equal(await runtime.finalBody(wire(),'openai_basic'),wire());const state={...runtime.state};
+  release();await new Promise(r=>setTimeout(r,20));assert.deepEqual(runtime.state,state);assert.match(state.message,/시간 초과/);
+ }finally{await runtime.stop();}
+});
