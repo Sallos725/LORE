@@ -86,7 +86,7 @@ def publish(api, dist, expected_tag, commit):
         release = checked(api.call('POST', '/releases', {
             'tag_name': expected_tag, 'target_commitish': commit, 'name': 'LORE ' + expected_tag,
             'draft': True, 'prerelease': '-' in expected_tag,
-            'body': 'Lite: browser plugin. Full: plugin + persistent sidecar. Initial alpha provides manual wiki and grounded source-quote storage; automatic extraction and host integration are not implemented. See README and SHA256SUMS.',
+            'body': 'Lite runs in the browser; Full uses a persistent sidecar. This alpha adds grounded LLM extraction, bounded chat collection, budget-checked memory injection, and hierarchical wiki editing with aliases and links. Automation requires installing the included PocketRisu host extension and rebuilding the supported host. Server outbox/proxy and real-device Safari verification remain pending. See README, docs/automation.md and SHA256SUMS.',
         }))
     else:
         checked((status, release))

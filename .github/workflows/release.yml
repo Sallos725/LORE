@@ -47,6 +47,13 @@ jobs:
           labels: |
             org.opencontainers.image.source=https://github.com/Sallos725/lore
             org.opencontainers.image.revision=${{ github.sha }}
+      - name: Verify published image platforms
+        env:
+          RELEASE_IMAGE: ghcr.io/sallos725/lore:${{ github.ref_name }}
+        run: |
+          docker buildx imagetools inspect "$RELEASE_IMAGE"
+          docker buildx imagetools inspect --raw "$RELEASE_IMAGE" > /tmp/lore-image-manifest.json
+          python3 -c 'import json; m=json.load(open("/tmp/lore-image-manifest.json")); p={x["platform"]["architecture"] for x in m["manifests"]}; assert {"amd64","arm64"} <= p, p'
       - name: Publish release assets
         env:
           RELEASE_FORGE: github
