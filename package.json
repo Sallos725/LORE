@@ -3,11 +3,17 @@
   "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
-  "engines": {"node": ">=22.23.0"},
+  "engines": {
+    "node": ">=22.23.0"
+  },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "build": "node scripts/build.mjs",
     "start": "node server/main.mjs",
-    "package": "python3 scripts/package.py"
+    "package": "python3 scripts/package.py",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.58.2"
   }
 }
