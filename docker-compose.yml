@@ -1,6 +1,6 @@
 services:
   lore:
-    image: ${LORE_IMAGE:-ghcr.io/sallos725/lore}:${LORE_VERSION:-v0.1.0-alpha.3}
+    image: ${LORE_IMAGE:-ghcr.io/sallos725/lore}:${LORE_VERSION:-latest}
     build: .
     environment:
       LORE_CREDENTIALS_JSON: ${LORE_CREDENTIALS_JSON:?Set scoped credentials in .env}

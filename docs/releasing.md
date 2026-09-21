@@ -4,7 +4,7 @@
 
 - GitHub: `https://github.com/Sallos725/lore`, 이미지 `ghcr.io/sallos725/lore:v<VERSION>`
 - Gitea: `https://gitea.grantos.m1ndb3nd3r.com/M1NDB3ND3R/lore`, 이미지 `gitea.grantos.m1ndb3nd3r.com/m1ndb3nd3r/lore:v<VERSION>`
-- 컨테이너는 Linux amd64/arm64를 발행한다. 태그별 버전만 발행하고 `latest`는 사용하지 않는다.
+- 컨테이너는 Linux amd64/arm64를 발행한다. 버전 태그를 보존하고, 릴리스 첨부 파일 발행까지 성공하면 같은 다중 아키텍처 이미지에 `latest`를 붙인다. `latest`는 알파를 포함해 가장 최근 발행한 릴리스이며 안정판 보증을 뜻하지 않는다.
 - 변경마다 로컬 커밋, 브랜치 push/PR은 CI, `v*` 태그 push는 릴리스를 실행한다. 태그 버전은 package.json과 정확히 일치해야 한다. Actions는 운영 서비스에 SSH하거나 실행 중인 스택을 교체하지 않는다.
 
 ## 최초 설정
@@ -25,7 +25,7 @@ Gitea job token의 패키지 권한은 GitHub와 다르므로 별도 PAT를 사�
 
 ## 태그 발행 절차
 
-1. package.json 버전, Compose 기본 태그, .env.example 및 README를 함께 갱신하고 `npm install --package-lock-only --ignore-scripts`를 실행한다.
+1. package.json 버전과 README의 고정 버전 예시를 갱신하고 `npm install --package-lock-only --ignore-scripts`를 실행한다.
 2. `npm run build`, `sh scripts/validate.sh`, `npm run package`, `python3 scripts/check-package.py`를 통과시킨다.
 3. 번들 포함 변경을 커밋한다. `main`을 두 원격에 push하여 GitHub CI를 확인한다. Gitea 실패 조사는 현재 보류한다.
 4. 같은 커밋의 annotated `v<VERSION>` 태그를 GitHub에 push한다. Gitea는 runner 복구 후 별도로 발행한다. **이 단계가 실제 발행을 시작한다.**
@@ -42,3 +42,13 @@ GitHub/Gitea 양쪽 SSH main push가 성공했고 GitHub 최초 CI도 성공했�
 2026-09-21: [v0.1.0-alpha.2](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2) 실제 발행과 다운로드 체크섬 검증을 완료했다. 두 아키텍처 GHCR manifest도 Release Actions에서 확인했다. 상세 기록은 [status.md](status.md)에 있다.
 
 2026-09-21: [v0.1.0-alpha.3](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.3)을 PocketRisu 패치 없이 배포했다. [Release Actions](https://github.com/Sallos725/LORE/actions/runs/35603398635), 실제 첨부 파일 6개의 checksum·로컬 재현 일치와 amd64/arm64 manifest 확인을 완료했다. 새 설치는 alpha.3 이후를 사용한다.
+
+## 기존 이미지에 latest 추가 또는 재시도
+
+GitHub **Promote latest** workflow_dispatch에 `release_tag`를 입력한다. 공개된(비-draft) 릴리스이고 현재 package.json 버전과 일치해야 한다. 저장소가 PRIVATE여도 실행할 수 있다. 이미지 재빌드와 기존 릴리스 첨부 파일 교체 없이 amd64/arm64 manifest 전체를 복사한다. 승격 후 원본/최신 index 일치와 실제 pull을 확인한다.
+
+```sh
+gh workflow run promote-latest.yml --repo Sallos725/LORE -f release_tag=v0.1.0-alpha.3
+```
+
+자동 Release와 수동 승격은 같은 concurrency group을 사용한다. Gitea의 다음 Release에도 성공 후 latest 갱신 단계를 넣었지만, 현재 Gitea Actions 실행은 계속 보류한다. [Docker imagetools create](https://docs.docker.com/reference/cli/docker/buildx/imagetools/create/)의 단일 index 복사 기능을 사용한다.

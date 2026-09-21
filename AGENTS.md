@@ -137,7 +137,7 @@ PATCH /wiki/:pageId             # revision 검증을 포함한 수동 교정
 ## 작업 규칙 및 인수인계
 
 - 작은 변경 단위로 진행하고 테스트 가능한 상태를 유지한다.
-- 작은 변경마다 LORE 독립 저장소에 커밋한다. GitHub `Sallos725/lore`와 Gitea `M1NDB3ND3R/lore` Actions로 Lite/Full 플러그인, 서버 패키지와 컨테이너를 배포한다. 실제 원격 발행과 로컬 준비 완료는 구분한다.
+- 작은 변경마다 LORE 독립 저장소에 커밋한다. GitHub `Sallos725/lore`와 Gitea `M1NDB3ND3R/lore` Actions로 Lite/Full 플러그인, 서버 패키지와 컨테이너를 배포한다. 버전 이미지를 보존하며 릴리스 성공 후 같은 amd64/arm64 index를 latest에도 연결한다. 현재 latest는 알파를 포함한다. 실제 원격 발행과 로컬 준비 완료는 구분한다.
 - LORE 작업과 PocketRisu 앱 수정, 상위 Compose 변경은 분리한다. 외부 앱 저장소의 브랜치 규칙을 따르고 `Risuai-NodeOnly/` 수정 전에는 새 브랜치를 만든다.
 - 기존 dirty/untracked 파일, 설정, 비밀 값과 사용자 데이터를 덮어쓰거나 커밋에 섞지 않는다.
 - 런타임 구현 요청은 그 범위 안에서 자율적으로 완료한다. 이 문서만을 근거로 추가 승인 절차를 만들지 않는다.

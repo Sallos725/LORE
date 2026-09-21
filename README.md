@@ -37,6 +37,12 @@ docker compose --env-file .env up -d --no-build
 docker compose -f docker-compose.yml -f docker-compose.http.yml --env-file .env up -d --no-build
 ```
 
+컨테이너의 기본 태그는 `latest`다. 성공적으로 발행한 최신 릴리스를 따라가며 **현재는 알파 버전**이다. 고정하려면 `.env`에서 `LORE_VERSION=v0.1.0-alpha.3`을 사용한다. 기존 설치가 버전 태그로 고정되어 있다면 `LORE_VERSION=latest`로 바꾼 뒤 `docker compose pull`과 `docker compose up -d --no-build`를 실행한다. 이미지 pull만으로 실행 중인 컨테이너가 교체되지는 않는다.
+
+```sh
+docker pull ghcr.io/sallos725/lore:latest
+```
+
 HTTP 설정의 기본 연결 주소는 `http://127.0.0.1:6011`이다. 휴대폰에서는 `.env`의 `LORE_BIND_ADDRESS`를 서버의 내부망 주소로 지정하고 그 주소로 접속한다. `LORE_POCKETRISU_URL`은 사이드카에서 접근할 PocketRisu origin이다. 예: 동일 Docker 네트워크의 `http://pocketrisu:6001`. 기존 앱·Compose를 자동 수정하지 않는다. 외부 인터넷 연결에는 HTTPS를 사용한다. 비공개 GHCR 이미지는 pull 인증이 필요하다.
 
 Node로 실행하려면 `lore-server-v0.1.0-alpha.3.tar.gz`를 푼다. Node.js 22.23.0 이상이면 추가 npm 설치 없이 실행한다.
