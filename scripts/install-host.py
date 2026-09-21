@@ -15,6 +15,9 @@ args=parser.parse_args()
 path=args.checkout/'src/ts/plugins/apiV3/v3.svelte.ts'
 text=path.read_text()
 if 'getLoreChatDelta:' in text:
+    helper=path.parent/'lore-host.mjs'
+    if not helper.exists() or helper.read_bytes()!=(ROOT/'integration/pocketrisu-lore.mjs').read_bytes():
+        raise SystemExit('An older or modified LORE extension exists; apply to a fresh pinned checkout')
     print('LORE host extension already installed');raise SystemExit(0)
 sha=subprocess.check_output(['git','-C',str(args.checkout),'rev-parse','HEAD'],text=True).strip()
 if sha!=PIN:raise SystemExit('Unsupported PocketRisu commit; revalidate adapter before installing')

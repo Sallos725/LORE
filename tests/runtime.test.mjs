@@ -7,7 +7,7 @@ import {readLoreDelta} from '../integration/pocketrisu-lore.mjs';
 const hashFactory=()=>{const h=createHash('sha256');return {update:s=>h.update(s),hex:()=>h.digest('hex')};};
 const storage=()=>{const data=new Map();return {getItem:async k=>structuredClone(data.get(k)),setItem:async(k,v)=>data.set(k,structuredClone(v)),removeItem:async k=>data.delete(k)};};
 function fixture(){
-  const character={chaId:'c',chatPage:0,chats:[{id:'chat',message:[{memo:'m1',role:'char',data:'Alice lives in Seoul.'}]}]},store=new LiteStore(storage()),state={generating:false,fits:true},hooks=new Set();
+  const character={chaId:'c',chatPage:0,chats:[{id:'chat',message:[{chatId:'m1',role:'char',data:'Alice lives in Seoul.'}]}]},store=new LiteStore(storage()),state={generating:false,fits:true},hooks=new Set();
   const host={getLoreChatDelta:async(cursor,mode)=>readLoreDelta(character,cursor,{hashFactory,mode,generating:state.generating}),checkLoreBudget:async()=>({fits:state.fits}),addRisuReplacer:async(_,fn)=>hooks.add(fn),removeRisuReplacer:async(_,fn)=>hooks.delete(fn),registerBodyIntercepter:async fn=>{hooks.add(fn);return {id:'body'};},unregisterBodyIntercepter:async()=>hooks.clear()};
   const extractor=async input=>[{title:'Alice',kind:'person',path:'people/Alice.md',aliases:['앨리스'],body:'Alice lives in Seoul.',expectedRevision:0,visibility:'public',evidence:[{messageId:input.sources[0].id,revision:input.sources[0].revision,quote:input.sources[0].text}]}];
   return {character,store,state,hooks,host,extractor};
@@ -36,7 +36,7 @@ test('Lite reset invalidates manual corrections with old evidence; failed batch 
   f.character.chats[0].message[0].data='Different event.';await f.store.sync(await f.host.getLoreChatDelta((await f.store.syncState()).cursor));
   assert.equal((await f.store.context()).text,'');
   await f.store.process(f.extractor);assert.equal((await f.store.conflicts()).length,1);assert.equal((await f.store.page(p.id)).body,'User correction');
-  const before=await f.store.index();f.character.chats[0].message.push({memo:'m2',role:'char',data:'Second event.'});await f.store.sync(await f.host.getLoreChatDelta((await f.store.syncState()).cursor));
+  const before=await f.store.index();f.character.chats[0].message.push({chatId:'m2',role:'char',data:'Second event.'});await f.store.sync(await f.host.getLoreChatDelta((await f.store.syncState()).cursor));
   await assert.rejects(f.store.process(async()=>[{title:'bad'}]));assert.deepEqual(await f.store.index(),before);
 });
 test('mandatory pages ignore search and overflow refuses incomplete context',async()=>{

@@ -18,7 +18,7 @@ try {
         const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];
         page.on('pageerror',error=>errors.push(error.message));
         await page.exposeFunction('backendFetch',async(url,options)=>{assert.ok(url.startsWith(base+'/'));if(url===base+'/fake-llm'){const input=JSON.parse(JSON.parse(options.body).messages[1].content);return {status:200,text:JSON.stringify({choices:[{message:{content:JSON.stringify({pages:await extract(input)})}}]})};}const res=await fetch(url,options);return {status:res.status,text:await res.text()};});
-        await page.exposeFunction('hostDelta',async(cursor,mode)=>readLoreDelta({chaId:'c',chatPage:0,chats:[{id:'chat',message:[{memo:'browser-m1',role:'char',data:'Alice lives in Seoul.'}]}]},cursor,{mode,hashFactory:()=>{const h=createHash('sha256');return {update:s=>h.update(s),hex:()=>h.digest('hex')};}}));
+        await page.exposeFunction('hostDelta',async(cursor,mode)=>readLoreDelta({chaId:'c',chatPage:0,chats:[{id:'chat',message:[{chatId:'browser-m1',role:'char',data:'Alice lives in Seoul.'}]}]},cursor,{mode,hashFactory:()=>{const h=createHash('sha256');return {update:s=>h.update(s),hex:()=>h.digest('hex')};}}));
         await page.goto(base+'/health');
         await page.evaluate(()=>{
           document.body.replaceChildren();const values=new Map();window.registrations=new Set();window.forbiddenCalls=0;
