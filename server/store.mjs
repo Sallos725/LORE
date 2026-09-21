@@ -1,3 +1,4 @@
+import {installSync} from './sync.mjs';
 import {installMemory} from './memory.mjs';
 import {aliasesOf,wikiPath,pageDefaults,resolveLink,linkTargets,browsePages,scorePage} from '../shared/wiki.mjs';
 import {DatabaseSync} from 'node:sqlite';
@@ -92,7 +93,7 @@ export class Store {
   }
   context(scope, options = {}) {
     const candidates = this.list(scope, {...options, offset: 0, limit: 128, includeBody: true});
-    const pending = this.db.prepare("SELECT count(*) AS n FROM jobs WHERE scope=? AND state IN ('queued','running','failed','cancelled')").get(scopeKey(scope)).n;
+    const pending = this.db.prepare("SELECT count(*) AS n FROM jobs j WHERE scope=? AND state IN ('queued','running','failed','cancelled') AND EXISTS (SELECT 1 FROM json_each(j.payload,'$.changes') c JOIN sources s ON s.scope=j.scope AND s.id=json_extract(c.value,'$.id') WHERE s.deleted=0 AND s.revision=json_extract(c.value,'$.revision'))").get(scopeKey(scope)).n;
     return {...compileContext(candidates.pages, options), scopeRevision: candidates.scopeRevision, pendingJobs: pending, fresh: pending === 0, candidateLimitReached: candidates.hasMore};
   }
   source(scope, id, rev, audience = 'world') {
@@ -186,3 +187,5 @@ export class Store {
 }
 
 installMemory(Store);
+
+installSync(Store);

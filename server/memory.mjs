@@ -58,6 +58,6 @@ export function installMemory(Store) {
     }finally{this.extractionRunning=false;this.activeExtraction=null;}
     return true;
   };
-  Store.prototype.jobs=function(scope){return this.db.prepare('SELECT id,eventId,state,attempts,error,updatedAt FROM jobs WHERE scope=? ORDER BY createdAt DESC LIMIT 20').all(scopeKey(scope));};
+  Store.prototype.jobs=function(scope,audience='world'){return this.db.prepare('SELECT id,eventId,state,attempts,error,updatedAt,payload FROM jobs WHERE scope=? ORDER BY createdAt DESC LIMIT 100').all(scopeKey(scope)).filter(j=>JSON.parse(j.payload).changes.every(c=>canRead(c,audience))).slice(0,20).map(({payload,...j})=>j);};
   Store.prototype.conflicts=function(scope,audience='world'){return this.db.prepare('SELECT id,job,page,data,reason FROM proposals WHERE scope=? ORDER BY rowid DESC LIMIT 100').all(scopeKey(scope)).map(r=>({...r,proposal:JSON.parse(r.data),data:undefined})).filter(r=>canRead(r.proposal,audience));};
 }
