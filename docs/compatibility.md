@@ -15,16 +15,16 @@
 - `beforeRequest`는 준비된 요청 메시지를 수정한다. `afterRequest`는 확정 저장 이벤트가 아니다.
 - `addRisuChatListener('output')`은 출력 트리거·inlay 반영 뒤 호출되지만 **전체 char/chat 스냅샷**을 전달한다. 구독 자체가 큰 RPC 복사를 만들 수 있어 초기 LORE는 구독하지 않는다.
 - `getCharacter()`는 hydrated snapshot, `getChatFromIndex()`는 전체 chat snapshot이다. 경량 메타데이터 API로 취급하지 않는다.
-- `getCurrentCharacterIndex()` 구현은 selectedCharID를 반환하므로 타입 정의의 number와 동일하다고 가정하지 않는다. 배열 인덱스를 영속 식별자로 사용하지 않는다.
+- `getCurrentCharacterIndex()`는 selectedCharID의 숫자 인덱스를 반환한다. 배열 인덱스를 영속 식별자로 사용하지 않는다.
 - 호스트에 LORE 전용 인증 프록시, revision 기반 확정 delta/outbox 및 삭제/분기 전달 계약은 확인되지 않았다. 기존 NodeOnly 프로토타입을 근거로 존재한다고 주장하지 않는다.
 
 alpha.3은 호스트 확장 의존성과 설치기를 제거했다. 기존 API만 사용한다.
 
 - `getDatabase(includeOnly)`는 선택하지 않은 키를 snapshot 전에 제외한다. 예산용 maxContext/maxResponse만 읽는다.
-- `getCurrentCharacterIndex()`의 실제 반환은 안정된 selectedCharID 문자열, `getCurrentChatIndex()`는 임시 위치다.
+- `getCurrentCharacterIndex()`는 실제 원본 호스트에서 숫자 인덱스를 반환한다. 기존 `/api/db/stats/characters`가 내보내는 DB 배열 순서의 메타데이터로 안정 chaId를 찾는다. archived 행은 뒤에 붙으며 해당 행은 선택 대상으로 거부한다. `getCurrentChatIndex()`도 임시 위치이며 실제 저장 chat.id로 위키를 구분한다. alpha.3의 문자열 반환 가정은 실제 설치 시험에서 발견해 수정했다.
 - `server/node/server.cjs`의 `/api/test_auth`는 기존 HttpOnly 세션 쿠키를 확인하고 짧은 JWT를 반환한다. host nativeFetch의 같은 origin GET을 사용한다. `/api/chat-content/:chaId/:chatIndex`는 인증 후 no-compression RISUSAVE + no-records MessagePack 채팅을 반환한다.
 - `src/ts/process/index.svelte.ts`가 원문 message.chatId를 OpenAIChat.memo에 연결한다. 요청의 이전 확정 anchor를 저장된 chat.id와 함께 검증한다.
-- `globalApi.svelte.ts`의 body interceptor는 JSON 문자열을 받는다. 타입 `openai_basic`/`openai_streaming`일 때 최종 기억을 추가한다. provider별 우회 경로에는 주입하지 않는다.
+- `globalApi.svelte.ts`의 body interceptor는 JSON 문자열을 받는다. 선택적 최종 검사 방식은 `openai_basic`/`openai_streaming`만 지원한다. 기본은 모델 프리셋에도 호출되는 공통 beforeRequest 주입이다. 원본 호스트의 Gemini 요청까지 전달되는 것을 확인한다.
 - V3 factory는 Response body를 backpressure/cancel 가능한 스트림으로 전달한다. Lite는 1 MiB 제한 후 decode하고 Full은 사이드카에서만 원문을 읽는다. decoder는 공개 MessagePack 형식에 따라 독립 작성했으며 지원하지 않는 압축/extension은 거부한다.
 
 
@@ -34,7 +34,7 @@ alpha.3은 호스트 확장 의존성과 설치기를 제거했다. 기존 API�
 
 ## 검증 수준
 
-소스 검토 및 합성 데이터 테스트 대상이다. 실제 PocketRisu 설치/모바일 Safari에서 동작 확인한 버전 목록을 뜻하지 않는다. 서버 이벤트 연결에는 저장 트랜잭션과 함께 기록하는 outbox, 안정된 message ID/revision, 수정/삭제/분기 및 재접속 재조정이 필요하다.
+원본 서버 파일 SHA-256 `1d87bb68ba99ec67eed1892efb65ec4d38493f8994d199033459acaaa5098c1d`가 조사 커밋과 같은 공식 컨테이너에서 설치를 검증한다. 상세 실행 결과는 public-readiness.md를 확인한다. 이것은 iPhone 실기기 검증을 뜻하지 않는다. 서버 이벤트 연결에는 저장 트랜잭션과 함께 기록하는 outbox, 안정된 message ID/revision, 수정/삭제/분기 및 재접속 재조정이 필요하다.
 
 ## RisuBard 위키 재확인과 개선 (alpha.2)
 
@@ -48,3 +48,5 @@ alpha.3은 호스트 확장 의존성과 설치기를 제거했다. 기존 API�
 LORE는 코드를 가져오지 않고 같은 사용 의도를 독립 구현했다. 임의의 여러 단계 폴더를 20개씩 탐색하고, 링크가 겹치면 후보를 선택하며, audience를 넘는 링크/역링크 후보는 노출하지 않는다. 제목을 바꿔도 기존 별칭과 ID를 보존한다. 경로 탈출을 거부하고 HTML 실행 없는 미리보기를 사용한다. 문서의 근거 revision이 바뀌면 주입에서 즉시 제외하고, 수동 교정과 LLM 제안의 충돌을 별도로 남긴다.
 
 alpha.3 검증은 원본 커밋의 API 소스 계약 확인, 합성 저장 응답/원문·분기/LLM 프로토콜/최종 문자열 요청 테스트, 모의 V3 호스트에서 Chromium/WebKit의 배포용 JS 동작이다. 실제 로그인 호스트의 전체 설치와 iPhone 장시간 검증, 의미적 기억 품질 평가는 별도다. 임시 체크아웃에 남아 있는 alpha.2 패치는 원본 API 증거로 사용하지 않는다.
+
+alpha.4는 공식 원본 이미지 `ghcr.io/pocketrisu/pocketrisu@sha256:502116cc2007a924c189fad4df6ae13b25c01d0e26538a80d9e25de82b5b05d8`를 격리 실행해 Lite/Full 설치부터 실제 Gemini 요청까지 검사한다. `python3 scripts/check-host.py`는 새 컨테이너만 만들며 종료 시 제거한다. 합성 채팅은 원본 서버에 저장된 것을 확인한 뒤 다음 요청을 보낸다. HTTP 저장 재전송은 requestId로 중복 반영을 방지한다.

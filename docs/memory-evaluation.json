@@ -1,0 +1,234 @@
+{
+  "date": "2026-09-21T14:27:23.116Z",
+  "provider": "ollama",
+  "model": "gpt-oss:120b-cloud",
+  "synthetic": true,
+  "note": "Heuristic checks plus separately documented human-readable review; not proof of general narrative accuracy.",
+  "results": [
+    {
+      "id": "state-change",
+      "passed": true,
+      "attempts": 1,
+      "errors": [],
+      "elapsedMs": 5582,
+      "checks": {
+        "schemaAndExactEvidence": true,
+        "alias": true,
+        "change": true,
+        "planNotCompleted": true,
+        "noOutsideGeography": true
+      },
+      "pages": [
+        {
+          "title": "Alice",
+          "kind": "person",
+          "body": "Alice (also called Al) lived in [[Seoul]].\n\nOn Tuesday Alice moved to [[Busan]].\n\nShe plans to visit [[Tokyo]] next month; she has not visited it yet.",
+          "visibility": "public",
+          "pinned": false,
+          "aliases": [
+            "Al"
+          ],
+          "path": "people/alice.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "Alice, also called Al, lived in Seoul."
+            },
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "On Tuesday Alice moved to Busan."
+            },
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "She plans to visit Tokyo next month; she has not visited it yet."
+            }
+          ]
+        },
+        {
+          "title": "Seoul",
+          "kind": "location",
+          "body": "Seoul is a city where Alice lived.\n\n> \"Alice, also called Al, lived in Seoul.\"",
+          "visibility": "public",
+          "pinned": false,
+          "aliases": [],
+          "path": "locations/seoul.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "Alice, also called Al, lived in Seoul."
+            }
+          ]
+        },
+        {
+          "title": "Busan",
+          "kind": "location",
+          "body": "Busan is a city to which Alice moved on Tuesday.\n\n> \"On Tuesday Alice moved to Busan.\"",
+          "visibility": "public",
+          "pinned": false,
+          "aliases": [],
+          "path": "locations/busan.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "On Tuesday Alice moved to Busan."
+            }
+          ]
+        },
+        {
+          "title": "Tokyo",
+          "kind": "location",
+          "body": "Tokyo is a city Alice plans to visit next month but has not yet visited.\n\n> \"She plans to visit Tokyo next month; she has not visited it yet.\"",
+          "visibility": "public",
+          "pinned": false,
+          "aliases": [],
+          "path": "locations/tokyo.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "She plans to visit Tokyo next month; she has not visited it yet."
+            }
+          ]
+        },
+        {
+          "title": "Alice moves to Busan",
+          "kind": "event",
+          "body": "On Tuesday, [[Alice]] moved from [[Seoul]] to [[Busan]].",
+          "visibility": "public",
+          "pinned": false,
+          "aliases": [],
+          "path": "events/alice-moves-to-busan.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "On Tuesday Alice moved to Busan."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "private-knowledge",
+      "passed": true,
+      "attempts": 1,
+      "errors": [],
+      "elapsedMs": 4516,
+      "checks": {
+        "schemaAndExactEvidence": true,
+        "privateOnly": true,
+        "knownLocation": true,
+        "noInventedDefinition": true
+      },
+      "pages": [
+        {
+          "title": "Alice",
+          "kind": "person",
+          "body": "Alice (also known as **Al**) is a character who discovered the location of the [[Silver Key|items/silver-key.md]] in the [[Cellar|locations/cellar.md]].",
+          "visibility": "Alice",
+          "pinned": false,
+          "aliases": [
+            "Al"
+          ],
+          "path": "people/alice.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "Alice is also known as Al."
+            },
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "Alice privately learned that the silver key is hidden in the cellar."
+            }
+          ]
+        },
+        {
+          "title": "Silver Key",
+          "kind": "item",
+          "body": "The silver key is an item that, according to [[Alice|people/alice.md]], is hidden in the [[Cellar|locations/cellar.md]].",
+          "visibility": "Alice",
+          "pinned": false,
+          "aliases": [],
+          "path": "items/silver-key.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "the silver key is hidden in the cellar"
+            }
+          ]
+        },
+        {
+          "title": "Cellar",
+          "kind": "location",
+          "body": "The cellar is the location where the [[Silver Key|items/silver-key.md]] is hidden, as discovered by [[Alice|people/alice.md]].",
+          "visibility": "Alice",
+          "pinned": false,
+          "aliases": [],
+          "path": "locations/cellar.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "the silver key is hidden in the cellar"
+            }
+          ]
+        },
+        {
+          "title": "Alice learns silver key location",
+          "kind": "event",
+          "body": "Alice learned that the [[Silver Key|items/silver-key.md]] is hidden in the [[Cellar|locations/cellar.md]].",
+          "visibility": "Alice",
+          "pinned": false,
+          "aliases": [],
+          "path": "events/alice-learns-key-location.md",
+          "contextMode": "auto",
+          "expectedRevision": 0,
+          "evidence": [
+            {
+              "messageId": "m1",
+              "revision": 1,
+              "quote": "Alice privately learned that the silver key is hidden in the cellar"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "instruction-data",
+      "passed": true,
+      "attempts": 1,
+      "errors": [],
+      "elapsedMs": 999,
+      "checks": {
+        "schemaAndExactEvidence": true,
+        "noInstructionReplay": true,
+        "noUnqualifiedConquest": true
+      },
+      "pages": []
+    }
+  ]
+}

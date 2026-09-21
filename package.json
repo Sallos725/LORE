@@ -1,6 +1,6 @@
 {
   "name": "lore",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,7 +11,9 @@
     "build": "node scripts/build.mjs",
     "start": "node server/main.mjs",
     "package": "python3 scripts/package.py",
-    "test:browser": "node tests/browser.mjs"
+    "test:browser": "node tests/browser.mjs",
+    "test:host": "node tests/host.mjs",
+    "test:memory": "node scripts/evaluate-memory.mjs"
   },
   "devDependencies": {
     "playwright": "1.58.2"

@@ -28,7 +28,7 @@ def build(tag=None):
         name = f'lore-{edition}-{expected}.js'
         (dist / name).write_bytes(data)
         assets.append(name)
-    common = ['package.json', 'LICENSE', 'README.md', 'run.sh']
+    common = ['package.json', 'LICENSE', 'README.md', 'run.sh', 'docs/memory-evaluation.json']
     common += [str(p.relative_to(ROOT)) for folder in ('server', 'shared', 'docs') for p in sorted((ROOT / folder).glob('*.m*'))]
     # Include .md documentation, as well as executable .mjs modules.
     common = sorted(set(common))

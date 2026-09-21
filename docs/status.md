@@ -1,48 +1,27 @@
-# 인수인계 — 0.1.0-alpha.3 (2026-09-21)
+# 인수인계 — 0.1.0-alpha.4
 
 ## 현재 구현
 
-사용자가 PocketRisu 수정·재빌드를 거부하여 alpha.2의 호스트 확장 설치기와 전용 API 의존성을 제거했다. 실행 중인 PocketRisu·상위 Compose는 수정하지 않았다. 작은 변경 단위로 독립 LORE 저장소에 커밋한다.
+PocketRisu 수정·재빌드가 필요 없는 Lite/Full 플러그인이다. Full은 기존 PocketRisu 로그인으로 자동 인증하며 별도 scope token 설정은 제거했다. 봇 카드의 각 저장 chat.id마다 별도의 위키·원문·이력·작업·주입 범위를 사용한다. Lite는 채팅 ID에서 자동 노트북 키를 만든다. 기본 주입은 모델 프리셋에도 적용되는 공통 beforeRequest이며, 기존 OpenAI 최종 body 검사를 선택할 수 있다. 이미지/tool 요청은 건너뛴다.
 
-- Lite: 기존 V3/HTTP API로 제한된 원문 조회, 기기 저장, 공급자·모델을 선택해 직접 LLM 호출.
-- Full: 플러그인과 HTTP(S) 통신, 기존 PocketRisu HTTP 원문을 서버에서만 조회, SQLite·영속 추출 큐, scope/audience별 공급자 설정. 내부망 HTTP 주소 지원.
-- OpenAI/OpenRouter/Ollama/custom 호환, Anthropic Messages, Gemini Generate Content 독립 호출. UI 키는 메모리에만 보존하고 영구 설정은 운영자 환경 변수다.
-- 확정 anchor 이전 원문만 수집, prefix 변경 시 근거 기억 무효화, revision·근거·audience 검증, 수동 교정 충돌 보존. 추출은 생성 요청과 별도 비동기 작업.
-- 기존 OpenAI 호환 최종 JSON 문자열 body에서 관련 기억 주입. UTF-8 기반 보수적 예산 추정·응답 예약량·원문/범위 재검사. 지원하지 않는 형식과 실패는 일반 채팅을 계속한다.
-- 계층형 Markdown 위키, 문서·쉼표 별칭 편집, 이름 변경 별칭 보존, 링크·역링크·모호한 후보 선택, 안전한 미리보기·frontmatter 내보내기는 유지한다.
-- 배포 산출물은 Lite JS, Full JS, Full ZIP, 서버 tar.gz 및 manifest/checksum 총 6개. 호스트 패치 ZIP은 폐지했다.
+계층형 Markdown 위키·쉼표 별칭·링크·역링크·교정 충돌, 원문 revision·동기화 cursor·비동기 LLM·큐 복구가 있다. Full 모델/키는 private SQLite에 저장되어 서버 재시작 뒤 복구된다. 새 채팅은 같은 설치에서 마지막 지정한 추출 설정을 기본으로 사용한다. Lite 전체 백업/빈 노트북 복원은 원문·최근 이력·작업·충돌을 보존하며 설정 URL/모델/예산은 다음 UI 열기에 유지한다. Lite API 키는 메모리에만 있다.
 
-## 로컬 검증
+## 실제 호스트에서 발견해 수정한 점
 
-Node 테스트 43개: 원문·revision·범위·분기·큐 복구, 공급자별 요청 형식, Full HTTP 설정·독립 LLM 호출, 최종 문자열 주입, 예산·장애 처리. Python 릴리스 모의 테스트, Chromium/WebKit 각각 Lite/Full의 모바일 폭 UI와 자동 흐름도 사용한다. Full 브라우저 테스트는 원문 본문이 브라우저로 들어오면 실패한다.
+`getCurrentCharacterIndex()`는 안정 문자열 ID가 아니라 숫자 인덱스다. `/api/db/stats/characters`의 DB 배열 순서 메타데이터(최대 256 KiB)에서 안정 chaId를 구한다. 전체 DB·getCharacter·getChatFromIndex는 호출하지 않는다. Full은 이 메타데이터와 원문을 서버에서 읽는다. 원본 stats API는 서버에서 DB를 디코드하므로 큰 데이터에서 비용을 측정해야 한다.
 
-실제 유료 LLM이나 사용자 대화를 테스트에 보내지 않았다. 원본 PocketRisu 커밋의 API 계약을 확인했으나 실제 로그인 호스트 전체 설치·iPhone 장시간 검증과 의미적 기억 품질 평가는 별도다. 기존 API 자체의 전체 선택 채팅 응답과 재검증 비용은 남는다. Full은 서버 16 MiB, Lite는 브라우저 1 MiB/128개 상한이다.
+기존 alpha.3의 큐 128개 선택 정체, 늦은 주입 완료 표시, 설정 복원 키 오류를 수정했다. 실제 호스트의 중복 HTTP 저장 요청은 requestId로 멱등 처리한다. 후속 질문에 이름이 없어도 현재 질문과 최근 두 대화로 관련 기억을 검색한다. 최초 예산 조회 권한은 자동 시작 단계에서 요청한다. 호스트의 경고 문구가 “전체 DB”여도 요청 데이터는 maxContext/maxResponse 두 스칼라뿐이다.
 
-## 발행 상태
+## 검증
 
-- [최종 GitHub CI 35603112924](https://github.com/Sallos725/LORE/actions/runs/35603112924) 성공.
-- [태그 Release 35603398635](https://github.com/Sallos725/LORE/actions/runs/35603398635) 성공. `v0.1.0-alpha.3`는 `193254e11e9d68d6b5fb2441a5b194275334427a`를 가리킨다.
-- [GitHub alpha.3 prerelease](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.3)에 Lite/Full JS, Full ZIP, 서버 tar.gz, release.json, SHA256SUMS 총 6개를 게시했다. 실제 다운로드의 모든 checksum이 로컬의 재현 가능한 빌드와 일치했다. 호스트 패치 파일/API 의존성이 없음을 산출물에서도 확인했다.
-- `ghcr.io/sallos725/lore:v0.1.0-alpha.3` 발행 및 linux/amd64·linux/arm64 manifest 검증 성공. digest: `sha256:b3160e95b875f53687e1b526142cec3307f1e6dbc8855c8f7005f9455806b005`.
-- Release에서 Node 43개·Python 5개, Chromium/WebKit 각각 Lite/Full, 서버 패키지 설치 실행, 격리 컨테이너 재시작 보존 검사가 통과했다. 실제 PocketRisu의 msgpackr 1.11.9 encoder로 Unicode·undefined·타임스탬프·20/128/500개 배열 디코딩도 확인했고 작은 fixture를 회귀 테스트에 포함했다.
-- GitHub/Gitea SSH main push 성공. Gitea에는 alpha.3 태그를 보내지 않았다. 실행 중인 PocketRisu·상위 서비스는 변경하지 않았다.
+Node 53개, Python 8개. Chromium/WebKit 양쪽 Lite/Full UI·백업/복원·자동 흐름. 독립 패키지 설치와 컨테이너 재시작. 실제 원본 호스트에서 Lite/Full 모두 설치/로그인/수집/추출/Gemini 요청 주입을 통과했다. 재실행은 python3 scripts/check-host.py이며 tests/host.mjs를 실행한다. 이미 초기화된 호스트에 시험 데이터를 쓰지 않도록 거부한다. 고정 공식 이미지 digest는 해당 시험/문서에 기록한다.
 
-이전 [alpha.2](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2)는 GitHub에서 실제 발행했다. 이 버전은 호스트 패치를 요구하므로 새 설치에는 alpha.3 이후를 사용한다. 이전 게시 파일과 태그는 덮어쓰지 않는다. 2026-09-21 공개 준비도 점검 시 GitHub visibility는 PUBLIC으로 확인했다. 이번 작업에서 공개 범위는 변경하지 않았다.
+`npm run test:memory`는 명시적인 LORE_EVAL_URL/MODEL로만 실행하는 실제 LLM 합성 평가다. 기본 CI는 외부 유료 LLM을 호출하지 않는다. 2026-09-21 기존 Ollama/gpt-oss:120b-cloud에서 3개 시나리오를 검증한 기록은 docs/memory-evaluation.json이다.
 
-Gitea는 SSH main 소스 동기화만 유지한다. 사용자 승인으로 기존 tea 자격 증명을 배포 secrets에 등록했지만, 사용자 지시에 따라 실패 조사와 태그 배포를 보류했다.
+## 배포 상태
 
-## 알려진 한계
+이 문서는 alpha.4 릴리스 준비 시 작성했다. 실제 원격 발행 상태·Actions URL·이미지 digest는 완료 후 아래에 추가한다. 기존 alpha.3과 latest의 발행 결과는 docs/releasing.md에 보존한다. GitHub를 우선하며 Gitea Actions 실패 조사는 사용자 지시에 따라 보류한다. main 소스는 양쪽 SSH로 동기화하고 새 버전 태그는 GitHub에만 보낸다.
 
-1. 새 답변은 다음 생성 요청에서 수집한다. 탭 종료 동안 새 대화 자동 발견·호스트 저장 outbox·원자적 활성 writer lock 검증은 없다. 앱 개조를 필수 설치로 다시 도입하지 않는다.
-2. 새 분기는 별도 토큰/노트북이다. configure 토큰의 ID 발견은 같은 캐릭터 메타데이터만 반환하고 수집 scope를 변경하지 않는다.
-3. 정확한 호스트 tokenizer API가 없어 보수적 추정이다. Responses API, model-preset/job 경로, 이미지/tool·다른 대화 provider의 주입은 미지원이다. 기억 추출 공급자는 별도 선택 가능하다.
-4. Full UI 키는 서버 재시작 후 재입력이 필요하다. 모델이 없는 작업은 큐에서 대기한다. Lite 다중 탭 쓰기·노트북 일괄 이전·기기 동기화는 미지원이다.
-5. 수정은 전체 범위를 재조정한다. 부분 변경 최적화·대형 위키 관리·실기기 메모리 및 장기 의미 품질 평가가 남는다.
+## 남은 범위
 
-[설정](automation.md) · [소스 계약](compatibility.md) · [모바일 검증](mobile-testing.md)
-
-## latest 및 공개 준비도 점검
-
-- [Promote latest 35606127318](https://github.com/Sallos725/LORE/actions/runs/35606127318) 성공. `latest`는 `v0.1.0-alpha.3`과 같은 index이며 digest는 `sha256:b3160e95b875f53687e1b526142cec3307f1e6dbc8855c8f7005f9455806b005`다. GitHub Actions의 실제 docker pull과 별도의 익명 GHCR manifest 조회에서 amd64/arm64 접근을 확인했다.
-- [latest 변경 CI 35606063946](https://github.com/Sallos725/LORE/actions/runs/35606063946) 성공. 다음 Release는 첨부 파일 발행 성공 뒤 latest를 갱신한다. Compose 기본값은 latest이며 현재 알파를 포함한다. Gitea 실행은 계속 보류한다.
-- [공개 준비도](public-readiness.md): 개발자 대상 알파 공개 가능, 일반 사용자 안정판 배포는 미완료. Full queued 작업 128개 후보 제한에 따른 뒤쪽 작업 정체와 주입 timeout 이후 잘못된 성공 상태를 합성 데이터로 재현했다. 런타임 수정은 별도 다음 변경 대상이다.
+실제 iPhone Safari 장시간·잠금·재접속·OOM, 대규모 장기 서사 품질, 실제 모든 공급자/프리셋 조합은 미검증이다. 정확한 tokenizer·이미지/tool 주입·호스트 저장 outbox·다중 탭 Lite 동시 쓰기는 현재 지원하지 않는다. 공개 준비도는 docs/public-readiness.md에 근거와 한계를 함께 기록한다.

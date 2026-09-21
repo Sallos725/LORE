@@ -1,6 +1,6 @@
 //@name lore_full
 //@display-name LORE Full
-//@version 0.1.0-alpha.3
+//@version 0.1.0-alpha.4
 //@api 3.0
 // Source: https://github.com/Sallos725/lore
 (async()=>{
@@ -541,7 +541,7 @@ class FullStore {
   identity(){return this.request('/identity');}
   list({query='',offset=0,limit=20}={}){return this.request(`/wiki?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`);}
   page(id){return this.request('/wiki/'+encodeURIComponent(id));}
-  put(id,page,expectedRevision){return this.request('/wiki/'+encodeURIComponent(id),'PATCH',{page,expectedRevision});}
+  put(id,page,expectedRevision){return this.request('/wiki/'+encodeURIComponent(id),'PATCH',{page,expectedRevision,requestId:crypto.randomUUID()});}
   async history(id){return (await this.request('/wiki/'+encodeURIComponent(id)+'/history')).history;}
   context(options){return this.request('/context','POST',options);}
   syncState(){return this.request('/sync');}
@@ -717,6 +717,12 @@ function requestBudget(messages,memory,settings,responseReserve,memoryBudget) {
  return {fits:plain&&Number.isSafeInteger(limit)&&Number.isSafeInteger(reserve)&&reserve>0&&limit>reserve&&memoryTokens<=memoryBudget&&requestTokens+reserve<=limit,memoryTokens,requestTokens,reserve,limit,method:'conservative-utf8-estimate'};
 }
 
+// Keep the current question and two recent turns; names often disappear in follow-ups.
+// Only request-local text is inspected, never the entire saved chat or wiki.
+function retrievalQuery(messages){
+ const recent=messages.filter(m=>['user','assistant'].includes(m.role)&&typeof m.content==='string').slice(-3).reverse();
+ return recent.map((m,i)=>{const limit=i===0?96:50,text=m.content.trim();return text.length<=limit?text:text.slice(0,Math.floor(limit/2))+' '+text.slice(-(limit-Math.floor(limit/2)-1));}).join(' ').slice(0,200);
+}
 const sameChat=(a,b)=>['characterId','chatId','branchId'].every(k=>a?.[k]&&a[k]===b?.[k]);
 class AutoMemory {
  constructor(host){this.host=host;this.client=new PocketRisuClient(host);this.state={enabled:false,message:'자동 기억 꺼짐'};this.epoch=0;this.requestGeneration=0;this.hookBusy=false;this.marker=crypto.randomUUID();}
@@ -765,7 +771,7 @@ class AutoMemory {
    let captured;try{captured=await this.client.capture(store,boundaries);}catch(error){if(!this.switchStore||![403,409].includes(error.status))throw error;if(!await switchCurrent())return messages;captured=await this.client.capture(store,boundaries);}requireValue(sameChat(captured,this.scope)&&captured.complete,'이전 대화 수집 중 · 이번 주입은 생략합니다.');
    if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return;void this.process();
    const lastUser=messages.filter(m=>m.role==='user').at(-1)?.content;requireValue(typeof lastUser==='string','텍스트 요청만 주입합니다.');
-   const context=await store.context({query:lastUser.slice(-200),budgetBytes:Math.max(1,this.memoryBudget-256)});requireValue(!context.requiredOverflow,'필수 기억이 예산을 넘었습니다.');
+   const context=await store.context({query:retrievalQuery(messages),budgetBytes:Math.max(1,this.memoryBudget-256)});requireValue(!context.requiredOverflow,'필수 기억이 예산을 넘었습니다.');
    if(epoch!==this.epoch||expired||generation!==this.requestGeneration)return;
    this.state={...this.state,message:context.text?'기억 준비 완료 · 최종 전송 시 검사합니다.':'수집 완료 · 기억 추출을 기다리는 중입니다.',collected:captured.cursor.count,included:context.included,excluded:context.excluded};
    if(!context.text)return messages;
