@@ -1,3 +1,4 @@
+import {PocketRisuClient} from './pocketrisu.mjs';
 import {AutoMemory} from './runtime.mjs';
 import {createExtractor} from '../shared/extraction.mjs';
 import {LiteStore} from './lite-store.mjs';
@@ -7,12 +8,12 @@ export async function install(host,edition) {
   let ui=null,alive=true;const registrations=[],notebooks=new Map(),runtime=new AutoMemory(host);
   const getStore=async options=>{if(edition==='Full')return new FullStore(host,options.url,options.token);if(!notebooks.has(options.notebook))notebooks.set(options.notebook,new LiteStore(await host.getLocalPluginStorage(),options.notebook));return notebooks.get(options.notebook);};
   let autoStore=null,llmBusy=false;
-  const automation={scope:()=>host.getLoreChatDelta(null,'identity'),status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
+  const automation={scope:async options=>{const s=await getStore(options);try{return await new PocketRisuClient(host).identity(s);}finally{if(edition==='Full')s.close();}},status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
     await automation.stop();autoStore=await getStore(options);
     // Native fetch transfers a response through RPC; avoid nonserializable signals
     // and never overlap an unabortable provider request after its local deadline.
-    const providerFetch=async(url,{signal,...args})=>{if(llmBusy)throw Error('이전 LLM 요청이 아직 끝나지 않았습니다.');llmBusy=true;try{return await host.nativeFetch(url,args);}finally{llmBusy=false;}};
-    try{await runtime.start({store:autoStore,memoryBudget:options.memoryBudget,extractor:edition==='Lite'?createExtractor(options.llm,providerFetch):null});}catch(error){autoStore?.close();autoStore=null;throw error;}
+    const providerFetch=async(url,{signal,...args})=>{if(llmBusy)throw Error('이전 LLM 요청이 아직 끝나지 않았습니다.');llmBusy=true;try{return await host.nativeFetch(url,{...args,requestTimeoutMs:options.llm?.timeoutMs??45000});}finally{llmBusy=false;}};
+    try{if(edition==='Full'&&options.llm)await autoStore.configureLLM(options.llm);await runtime.start({store:autoStore,memoryBudget:options.memoryBudget,extractor:edition==='Lite'?createExtractor(options.llm,providerFetch):null});}catch(error){autoStore?.close();autoStore=null;throw error;}
   }};
   const open=async()=>{
     if(!alive)return;ui?.close();

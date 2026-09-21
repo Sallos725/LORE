@@ -1,42 +1,61 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
+import {encodeFixture} from './saved-chat-fixture.mjs';
+import {requestBudget} from '../plugin/pocketrisu.mjs';
 import {LiteStore} from '../plugin/lite-store.mjs';
 import {AutoMemory} from '../plugin/runtime.mjs';
-import {readLoreDelta} from '../integration/pocketrisu-lore.mjs';
-const hashFactory=()=>{const h=createHash('sha256');return {update:s=>h.update(s),hex:()=>h.digest('hex')};};
+import {readLoreDelta} from '../shared/chat-delta.mjs';
 const storage=()=>{const data=new Map();return {getItem:async k=>structuredClone(data.get(k)),setItem:async(k,v)=>data.set(k,structuredClone(v)),removeItem:async k=>data.delete(k)};};
 function fixture(){
-  const character={chaId:'c',chatPage:0,chats:[{id:'chat',message:[{chatId:'m1',role:'char',data:'Alice lives in Seoul.'}]}]},store=new LiteStore(storage()),state={generating:false,fits:true},hooks=new Set();
-  const host={getLoreChatDelta:async(cursor,mode)=>readLoreDelta(character,cursor,{hashFactory,mode,generating:state.generating}),checkLoreBudget:async()=>({fits:state.fits}),addRisuReplacer:async(_,fn)=>hooks.add(fn),removeRisuReplacer:async(_,fn)=>hooks.delete(fn),registerBodyIntercepter:async fn=>{hooks.add(fn);return {id:'body'};},unregisterBodyIntercepter:async()=>hooks.clear()};
-  const extractor=async input=>[{title:'Alice',kind:'person',path:'people/Alice.md',aliases:['앨리스'],body:'Alice lives in Seoul.',expectedRevision:0,visibility:'public',evidence:[{messageId:input.sources[0].id,revision:input.sources[0].revision,quote:input.sources[0].text}]}];
-  return {character,store,state,hooks,host,extractor};
+ const character={chaId:'c',chatPage:0,chats:[{id:'chat',message:[{chatId:'m1',role:'char',data:'Alice lives in Seoul.'},{chatId:'future',role:'char',data:'Unconfirmed stream.'}]}]},store=new LiteStore(storage()),state={offline:false,maxContext:8192},hooks=new Set();
+ const host={
+  getCurrentCharacterIndex:async()=>character.chaId,getCurrentChatIndex:async()=>character.chatPage,
+  getDatabase:async keys=>{assert.deepEqual(keys,['maxContext','maxResponse']);return {maxContext:state.maxContext,maxResponse:1024};},
+  getCharacter:()=>{throw Error('Full character copies forbidden');},
+  nativeFetch:async(url,args)=>{if(state.offline)throw Error('offline');assert.equal(args.method,'GET');assert.ok(args.requestTimeoutMs);if(url==='/api/test_auth')return Response.json({status:'success',token:'synthetic-session'});assert.equal(url,'/api/chat-content/c/0');assert.equal(args.headers['risu-auth'],'synthetic-session');return new Response(encodeFixture(character.chats[0]));},
+  addRisuReplacer:async(_,fn)=>hooks.add(fn),removeRisuReplacer:async(_,fn)=>hooks.delete(fn),registerBodyIntercepter:async fn=>{hooks.add(fn);return {id:'body'};},unregisterBodyIntercepter:async()=>hooks.clear()
+ };
+ const extractor=async input=>[{title:'Alice',kind:'person',path:'people/Alice.md',aliases:['앨리스'],body:'Alice lives in Seoul.',expectedRevision:0,visibility:'public',evidence:[{messageId:input.sources[0].id,revision:input.sources[0].revision,quote:input.sources[0].text}]}];
+ const delta=(cursor,mode)=>readLoreDelta(character,cursor,{mode});return {character,store,state,hooks,host,extractor,delta};
 }
-test('Lite collects, extracts evidence, injects relevant memory and checks final request',async()=>{
-  const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
-  try{
-    const pages=(await f.store.list()).pages;assert.equal(pages.length,1);assert.equal((await f.store.page(pages[0].id)).evidence[0].messageId,'m1');
-    const messages=[{role:'user',content:'Where is 앨리스?'}],injected=await runtime.before(messages,'model');assert.equal(injected.length,2);assert.match(injected[0].content,/Seoul/);
-    assert.equal((await runtime.finalBody({messages:injected})).messages.length,2);
-    f.state.fits=false;assert.deepEqual(await runtime.before(messages,'model'),messages);assert.deepEqual((await runtime.finalBody({messages:injected})).messages,messages);
-    f.state.fits=true;f.character.chats[0].message[0].data='Alice moved to Busan.';
-    assert.deepEqual(await runtime.before(messages,'model'),messages);
-    f.character.chats[0].id='another-chat';assert.deepEqual(await runtime.before(messages,'model'),messages);
-    assert.deepEqual(await runtime.before(messages,'other'),messages);
-  }finally{await runtime.stop();assert.equal(f.hooks.size,0);}
+const messages=[{role:'assistant',content:'Alice lives in Seoul.',memo:'m1'},{role:'user',content:'Where is Alice?',memo:'new'}];
+const wire=()=>JSON.stringify({model:'fixture',max_tokens:1024,messages:messages.map(({memo,...m})=>m)});
+test('stock APIs collect canonical prefix; independent LLM extracts; JSON-string final hook injects',async()=>{
+ const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
+ try {
+  assert.equal((await f.store.index()).length,0);assert.equal(await runtime.before(messages,'model'),messages);
+  while(f.store.processing)await new Promise(r=>setTimeout(r,1));await runtime.process();
+  const pages=(await f.store.index());assert.equal(pages.length,1);assert.equal((await f.store.page(pages[0].id)).evidence[0].messageId,'m1');assert.equal((await f.store.syncState()).cursor.count,1);
+  await runtime.before(messages,'model');const injected=await runtime.finalBody(wire(),'openai_streaming');assert.equal(JSON.parse(injected).messages.length,3);assert.match(injected,/lore-memory/);
+  assert.equal(await runtime.finalBody(wire(),'openai_streaming'),wire());
+  await runtime.before(messages,'model');f.state.maxContext=1200;assert.equal(await runtime.finalBody(wire(),'openai_basic'),wire());
+  f.state.maxContext=8192;await runtime.before(messages,'model');f.character.chats[0].message[0].data='Alice moved to Busan.';
+  assert.equal(await runtime.finalBody(wire(),'openai_basic'),wire());assert.equal((await f.store.context()).text,'');
+ }finally{await runtime.stop();assert.equal(f.hooks.size,0);}
 });
-test('generation candidates are not collected; unavailable backend leaves chat working',async()=>{
-  const f=fixture();f.state.generating=true;const runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
-  try{assert.equal((await f.store.list()).pages.length,0);f.host.getLoreChatDelta=async()=>{throw Error('offline');};const messages=[{role:'user',content:'hello'}];assert.equal(await runtime.before(messages,'model'),messages);}finally{await runtime.stop();}
+test('missing saved anchors, offline, alternate requests and changed chats fail open',async()=>{
+ const f=fixture(),runtime=new AutoMemory(f.host);await runtime.start({store:f.store,extractor:f.extractor});
+ try{
+  assert.equal(await runtime.before(messages,'other'),messages);assert.equal((await f.store.syncState()).cursor,null);
+  const noAnchor=[{role:'user',content:'first'}];assert.equal(await runtime.before(noAnchor,'model'),noAnchor);
+  f.state.offline=true;assert.equal(await runtime.before(messages,'model'),messages);assert.equal(await runtime.finalBody(wire(),'openai_basic'),wire());
+  f.state.offline=false;f.character.chats[0].id='branch';await runtime.before(messages,'model');assert.equal((await f.store.syncState()).cursor,null);
+ }finally{await runtime.stop();}
+});
+test('budget estimate accounts for full prompt, framing, reserve and unsupported multimodal data',()=>{
+ const settings={maxContext:8192,maxResponse:1024};assert.equal(requestBudget(messages,'memory',settings,1024,1024).fits,true);
+ assert.equal(requestBudget(messages,'한'.repeat(400),settings,1024,1024).fits,false);
+ assert.equal(requestBudget(messages,'memory',settings,9000,1024).fits,false);
+ assert.equal(requestBudget([{role:'user',content:[{type:'image_url'}]}],'memory',settings,1024,1024).fits,false);
 });
 test('Lite reset invalidates manual corrections with old evidence; failed batch stays atomic',async()=>{
-  const f=fixture(),id=await f.host.getLoreChatDelta(null,'identity');await f.store.bind({characterId:id.characterId,chatId:id.chatId,branchId:id.branchId});
-  await f.store.sync(await f.host.getLoreChatDelta(null));await f.store.process(f.extractor);
+  const f=fixture(),id=await f.delta(null,'identity');await f.store.bind({characterId:id.characterId,chatId:id.chatId,branchId:id.branchId});
+  await f.store.sync(await f.delta(null));await f.store.process(f.extractor);
   const p=(await f.store.list()).pages[0];await f.store.put(p.id,{...await f.store.page(p.id),body:'User correction'},p.revision);
-  f.character.chats[0].message[0].data='Different event.';await f.store.sync(await f.host.getLoreChatDelta((await f.store.syncState()).cursor));
+  f.character.chats[0].message[0].data='Different event.';await f.store.sync(await f.delta((await f.store.syncState()).cursor));
   assert.equal((await f.store.context()).text,'');
   await f.store.process(f.extractor);assert.equal((await f.store.conflicts()).length,1);assert.equal((await f.store.page(p.id)).body,'User correction');
-  const before=await f.store.index();f.character.chats[0].message.push({chatId:'m2',role:'char',data:'Second event.'});await f.store.sync(await f.host.getLoreChatDelta((await f.store.syncState()).cursor));
+  const before=await f.store.index();f.character.chats[0].message.push({chatId:'m2',role:'char',data:'Second event.'});await f.store.sync(await f.delta((await f.store.syncState()).cursor));
   await assert.rejects(f.store.process(async()=>[{title:'bad'}]));assert.deepEqual(await f.store.index(),before);
 });
 test('mandatory pages ignore search and overflow refuses incomplete context',async()=>{

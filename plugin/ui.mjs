@@ -1,3 +1,4 @@
+import {PROVIDERS} from '../shared/providers.mjs';
 import {wikiSegments,markdownExport} from '../shared/wiki.mjs';
 export function renderWiki(element,body,navigate){
   element.replaceChildren();let fence=null,code=null;
@@ -17,7 +18,7 @@ export function renderWiki(element,body,navigate){
 }
 export function openUI({edition,host,connect,automation,onClose}) {
   let alive=true,store=null,page=null,offset=0,working=false,folder='',tree=false,connectionOptions=null;
-  const root=document.createElement('section');root.setAttribute('aria-label',`LORE ${edition}`);
+  const controller=new AbortController(),root=document.createElement('section');root.setAttribute('aria-label',`LORE ${edition}`);
   root.innerHTML=`<style>
   body{margin:0;background:#111922;color:#e4e9ed;font:16px/1.5 system-ui}*{box-sizing:border-box}
   .lore{max-width:960px;margin:auto;padding:24px 16px}header,.tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -32,8 +33,8 @@ export function openUI({edition,host,connect,automation,onClose}) {
   </style><main class="lore"><header><h1>LORE ${edition}</h1><button data-stop>자동 기억 중지</button><button data-close>닫기</button></header>
   <p>대화에서 이어지는 인물 · 사건 · 장면의 위키</p>
   <button data-host-scope>현재 채팅 ID 확인</button><div data-connect></div><output role="status"></output><div data-work hidden>
-  <details><summary>자동 기억 설정 · 작업 상태</summary><p>현재 채팅의 확정된 메시지를 수집하고 관련 기억을 생성 요청에 넣습니다. 처음 시작하면 이전 대화도 순서대로 처리합니다.</p>
-  <small>자동 연결에는 PocketRisu LORE API 확장이 필요합니다. 설치: docs/automation.md · 탭 종료 전 전달되지 않은 메시지는 다시 연결할 때 수집합니다.</small>
+  <details><summary>자동 기억 설정 · 작업 상태</summary><p>현재 채팅의 확정된 메시지를 수집하고 관련 기억을 생성 요청에 넣습니다. 다음 요청에 포함된 확정 대화까지 순서대로 처리합니다.</p>
+  <small>PocketRisu 수정 없이 동작합니다. 새 답변은 다음 요청에서 수집합니다. 기억 주입은 OpenAI 호환 일반 텍스트 요청을 지원합니다.</small>
   <div data-llm></div><label>기억 토큰 예산<input data-memory-budget type="number" value="1024" min="128" max="4096"></label>
   <div class="tools"><button data-auto>자동 기억 시작</button><button data-jobs>상태 · 작업 · 충돌 새로고침</button></div><pre data-auto-status></pre><div data-job-list></div><div data-conflicts></div></details>
   <label>위키 검색<input data-search maxlength="200" placeholder="${edition==='Lite'?'제목 · 별칭 · 경로':'제목 · 별칭 · 경로 · 본문'}"></label>
@@ -49,7 +50,7 @@ export function openUI({edition,host,connect,automation,onClose}) {
   <small>저장한 교정은 자동 추출이 덮어쓰지 않습니다. 제목을 바꾸면 이전 제목을 별칭으로 보존합니다.</small>
   <div data-rendered class="wiki-view"></div><div data-linked></div><pre data-evidence></pre></div>
   <label>컨텍스트 미리보기 한도 (UTF-8 bytes)<input data-budget type="number" value="4096" min="0" max="16384"></label>
-  <pre data-preview></pre><small>이 미리보기는 저장된 기억만 보여 줍니다. 자동 주입은 현재 채팅 범위와 전체 요청의 토큰 예산도 검사합니다.</small></div></main>`;
+  <pre data-preview></pre><small>이 미리보기는 저장된 기억만 보여 줍니다. 자동 주입은 현재 채팅 범위와 전체 요청의 보수적 토큰 추정 예산도 검사합니다.</small></div></main>`;
   document.body.append(root);
   const $=selector=>root.querySelector(selector),status=$('output'),workspace=$('[data-work]');
   const say=value=>{if(alive)status.textContent=value;};
@@ -88,13 +89,19 @@ export function openUI({edition,host,connect,automation,onClose}) {
   action('[data-export]',()=>{if(!page)return;const url=URL.createObjectURL(new Blob([markdownExport(page)],{type:'text/markdown;charset=utf-8'}));urls.add(url);const a=document.createElement('a');a.href=url;a.download=page.path?.split('/').at(-1)??'lore.md';root.append(a);a.click();a.remove();URL.revokeObjectURL(url);urls.delete(url);});
   const connection=$('[data-connect]');
   if(edition==='Full')connection.innerHTML='<label>Full 서버 URL<input data-url type="url" placeholder="https://lore.example.com"></label><label>위키 scope token<input data-token type="password" autocomplete="off"></label><button data-start>연결</button><small>토큰은 저장하지 않습니다. 자동 기억을 켜면 중지하거나 플러그인을 해제할 때까지 메모리에서 사용합니다.</small>';
-  else{connection.innerHTML='<label>노트북 ID<input data-notebook value="default" maxlength="160"></label><button data-start>노트북 열기</button><small>자동 기억 시작 시 현재 채팅에 연결됩니다. 다른 채팅은 다른 노트북을 사용하세요.</small>';$('[data-llm]').innerHTML='<label>LLM chat/completions URL<input data-llm-url type="url" placeholder="https://your-provider.example/v1/chat/completions"></label><label>모델<input data-model maxlength="160"></label><label>API key<input data-api-key type="password" autocomplete="off"></label><small>키는 저장하지 않습니다. 원문 최대 128개, 미완료 작업 최대 4개. 탭을 닫으면 Lite 작업은 중단됩니다.</small>';}
+  else{connection.innerHTML='<label>노트북 ID<input data-notebook value="default" maxlength="160"></label><button data-start>노트북 열기</button><small>자동 기억 시작 시 현재 채팅에 연결됩니다. 다른 채팅은 다른 노트북을 사용하세요.</small>';}
+  $('[data-llm]').innerHTML=(edition==='Full'?'<label><input data-use-server type="checkbox" checked> 서버에 설정된 추출 모델 사용</label>':'')+'<div data-provider-fields><label>기억 추출 공급자<select data-provider></select></label><label>API 주소<input data-llm-url type="url"></label><label>모델 ID<input data-model maxlength="160" placeholder="사용할 모델 ID"></label><label>API key<input data-api-key type="password" autocomplete="off"></label><label><input data-json-mode type="checkbox"> JSON 응답 모드 (지원 모델만)</label></div><small>'+(edition==='Lite'?'브라우저에서 별도 LLM을 호출합니다. 원문 최대 128개·저장 채팅 1 MiB. 탭을 닫으면 호출이 중단됩니다.':'사이드카가 별도 LLM을 호출합니다. 키는 서버 메모리에만 유지하므로 서버 재시작 후 다시 입력합니다. 계속 쓸 설정은 서버 환경 변수로 지정할 수 있습니다.')+'</small>';
+  for(const [value,p] of Object.entries(PROVIDERS)){const option=document.createElement('option');option.value=value;option.textContent=p.label;$('[data-provider]').append(option);}
+  $('[data-provider]').value='custom';
+  $('[data-provider]').addEventListener('change',()=>{$('[data-llm-url]').value=PROVIDERS[$('[data-provider]').value].url;},{signal:controller.signal});
+  if(edition==='Full'){const toggle=()=>{$('[data-provider-fields]').hidden=$('[data-use-server]').checked;};$('[data-use-server]').addEventListener('change',toggle,{signal:controller.signal});toggle();}
+
   action('[data-start]',async()=>{store?.close();workspace.hidden=true;page=null;offset=0;tree=false;$('[data-editor]').hidden=true;$('[data-preview]').textContent='';connectionOptions=edition==='Full'?{url:$('[data-url]').value,token:$('[data-token]').value}:{notebook:$('[data-notebook]').value};store=await connect(connectionOptions);const identity=await store.identity();if(!alive){store.close();return;}workspace.hidden=false;const visibility=$('[data-visibility]');visibility.replaceChildren();for(const value of new Set(identity.audience==='world'?['public']:['public',identity.audience])){const option=document.createElement('option');option.value=value;option.textContent=value;visibility.append(option);}await list();say('열린 범위: '+JSON.stringify(identity.scope));$('[data-auto-status]').textContent=automation?.status().message??'자동 기억 꺼짐';});
-  action('[data-auto]',async()=>{await automation.start({...connectionOptions,memoryBudget:Number($('[data-memory-budget]').value),llm:edition==='Lite'?{url:$('[data-llm-url]').value,model:$('[data-model]').value,apiKey:$('[data-api-key]').value,jsonMode:false}:undefined});if(alive){$('[data-auto-status]').textContent=automation.status().message;say('자동 기억을 시작했습니다. 창을 닫아도 현재 탭에서는 계속 동작합니다.');}});
-  action('[data-host-scope]',async()=>say('현재 채팅 ID: '+JSON.stringify(await automation.scope())));
+  action('[data-auto]',async()=>{await automation.start({...connectionOptions,memoryBudget:Number($('[data-memory-budget]').value),llm:edition==='Lite'||!$('[data-use-server]').checked?{provider:$('[data-provider]').value,url:$('[data-llm-url]').value,model:$('[data-model]').value,apiKey:$('[data-api-key]').value,jsonMode:$('[data-json-mode]').checked}:undefined});if(alive){$('[data-auto-status]').textContent=automation.status().message;say('자동 기억을 시작했습니다. 창을 닫아도 현재 탭에서는 계속 동작합니다.');}});
+  action('[data-host-scope]',async()=>say('현재 채팅 ID: '+JSON.stringify(await automation.scope(edition==='Full'?{url:$('[data-url]').value,token:$('[data-token]').value}:{notebook:$('[data-notebook]').value}))));
   action('[data-stop]',async()=>{await automation.stop();if(alive)$('[data-auto-status]').textContent=automation.status().message;});
   action('[data-jobs]',async()=>{const jobs=await store.jobs(),conflicts=await store.conflicts();if(!alive)return;$('[data-auto-status]').textContent=JSON.stringify(automation.status(),null,2);const list=$('[data-job-list]');list.replaceChildren();for(const j of jobs){const row=document.createElement('div');row.textContent=`${j.state} · 시도 ${j.attempts} ${j.error??''} `;if(['queued','running','failed'].includes(j.state)){const button=document.createElement('button');button.textContent='취소';button.onclick=()=>run(async()=>{await store.cancel(j.id);say('작업을 취소했습니다.');});row.append(button);}if(['failed','cancelled'].includes(j.state)){const retry=document.createElement('button');retry.textContent='재시도';retry.onclick=()=>run(async()=>{await store.retry(j.id);say('작업을 다시 대기열에 넣었습니다.');});row.append(retry);}list.append(row);}const out=$('[data-conflicts]');out.replaceChildren();for(const c of conflicts){const detail=document.createElement('details'),summary=document.createElement('summary'),pre=document.createElement('pre');summary.textContent='교정과 충돌: '+c.proposal.title;pre.textContent=JSON.stringify(c.proposal,null,2);const dismiss=document.createElement('button');dismiss.textContent='검토 완료 · 제안 제거';dismiss.onclick=()=>run(async()=>{await store.dismissConflict(c.id);detail.remove();});detail.append(summary,pre,dismiss);out.append(detail);}});
-  const close=()=>{if(!alive)return;alive=false;store?.close();store=null;page=null;connectionOptions=null;for(const url of urls)URL.revokeObjectURL(url);urls.clear();root.remove();onClose?.();};
+  const close=()=>{if(!alive)return;alive=false;controller.abort();store?.close();store=null;page=null;connectionOptions=null;for(const url of urls)URL.revokeObjectURL(url);urls.clear();root.remove();onClose?.();};
   $('[data-close]').onclick=()=>{close();host.hideContainer?.();};
   return {close,root};
 }
