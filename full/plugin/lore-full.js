@@ -27,8 +27,10 @@ function validatePage(input) {
     body: boundedString(input.body, 'body', LIMITS.pageBytes),
     visibility: input.visibility ?? 'public',
     pinned: input.pinned ?? true,
+    aliases: input.aliases ?? [], path: input.path, contextMode: input.contextMode ?? 'auto',
   };
-  requireValue(['person', 'event', 'scene'].includes(page.kind), 'Invalid page kind');
+  requireValue(['person', 'event', 'scene', 'location', 'faction', 'item', 'concept', 'note'].includes(page.kind), 'Invalid page kind');
+  requireValue(['auto','always','never'].includes(page.contextMode), 'Invalid context mode');
   boundedString(page.visibility, 'visibility');
   requireValue(typeof page.pinned === 'boolean', 'Invalid pinned');
   requireValue(new TextEncoder().encode(page.body).length <= LIMITS.pageBytes, 'Page body too large', 413);
@@ -41,36 +43,102 @@ function compileContext(pages, {budgetBytes = 4096, audience = 'world'} = {}) {
   requireValue(Number.isInteger(budgetBytes) && budgetBytes >= 0 && budgetBytes <= LIMITS.contextBytes, 'Invalid budgetBytes');
   const included = [], excluded = [];
   let text = '', usedBytes = 0;
-  for (const page of pages) {
+  let requiredOverflow=false;
+  for (const page of [...pages].sort((a,b)=>Number(b.contextMode==='always')-Number(a.contextMode==='always'))) {
     // Do not disclose the existence of inaccessible pages.
     if (!canRead(page, audience)) continue;
+    if(page.contextMode==='never'){excluded.push({id:page.id,reason:'disabled'});continue;}
     if (page.active === false) { excluded.push({id: page.id, reason: 'invalidated-evidence'}); continue; }
     const block = `## ${page.title}\n${page.body}\n\n`;
     const bytes = new TextEncoder().encode(block).length;
-    if (usedBytes + bytes > budgetBytes) { excluded.push({id: page.id, reason: 'budget'}); continue; }
+    if (usedBytes + bytes > budgetBytes) { if(page.contextMode==='always')requiredOverflow=true; excluded.push({id: page.id, reason: page.contextMode==='always'?'required-budget':'budget'}); continue; }
     text += block;
     usedBytes += bytes;
     included.push({id: page.id, revision: page.revision, origin: page.origin, evidence: page.evidence ?? []});
   }
-  return {text, usedBytes, budgetBytes, included, excluded, budgetUnit: 'utf8-bytes', fullPromptChecked: false};
+  if(requiredOverflow){text='';usedBytes=0;included.length=0;}
+  return {text, requiredOverflow, usedBytes, budgetBytes, included, excluded, budgetUnit: 'utf8-bytes', fullPromptChecked: false};
+}
+
+const wikiKey = value => value.normalize('NFKC').replace(/\s+/g,' ').trim().toLowerCase();
+function aliasesOf(value = [], title = '') {
+  const values = typeof value === 'string' ? value.split(',') : value;
+  requireValue(Array.isArray(values) && values.length <= 32, 'Aliases: at most 32 items');
+  const seen = new Set([wikiKey(title)]), result = [];
+  for (const raw of values) {
+    boundedString(raw,'alias',160,true); const alias=raw.trim(), key=wikiKey(alias);
+    if (key && !seen.has(key)) { seen.add(key); result.push(alias); }
+  }
+  return result;
+}
+function wikiPath(value) {
+  boundedString(value,'path',240);
+  const path=value.normalize('NFKC');
+  requireValue(!/[\\\x00-\x1f:#?<>"|]/u.test(path) && !path.startsWith('/') && path.endsWith('.md'), 'Use a relative .md path');
+  const parts=path.split('/');
+  requireValue(parts.length<=8 && parts.every(p=>p.trim()===p && p && p!=='.' && p!=='..'), 'Invalid folder path');
+  return path;
+}
+function pageDefaults(page) {
+  return {...page, aliases:page.aliases??[], path:page.path??`${page.kind??'event'}/${page.id.replace(/[^\p{L}\p{N}_-]/gu,'_')}.md`,contextMode:page.contextMode??'auto'};
+}
+// Parse links outside fenced/inline code; rendering uses DOM text nodes, never HTML.
+function wikiSegments(body) {
+  const result=[]; let fence=null,offset=0;
+  for(const line of body.split(/(?<=\n)/u)) {
+    const marker=line.match(/^\s{0,3}(`{3,}|~{3,})/u)?.[1];
+    if(marker){if(!fence)fence=marker;else if(marker[0]===fence[0]&&marker.length>=fence.length)fence=null;result.push({text:line});offset+=line.length;continue;}
+    if(fence){result.push({text:line});offset+=line.length;continue;}
+    let code='',start=0;
+    for(let i=0;i<line.length;){
+      if(line[i]==='\\'){i+=2;continue;}
+      if(line[i]==='`'){const ticks=line.slice(i).match(/^`+/u)[0];if(!code)code=ticks;else if(code===ticks)code='';i+=ticks.length;continue;}
+      if(!code&&line.slice(i,i+2)==='[['){const end=line.indexOf(']]',i+2);if(end>=0){const raw=line.slice(i+2,end),parts=raw.split('|');const target=parts[0].trim(),label=(parts[1]??parts[0]).trim();if(parts.length<=2&&target&&label&&target.length<=240&&label.length<=160&&!/[\[\]\n]/u.test(raw)){if(i>start)result.push({text:line.slice(start,i)});result.push({text:label,target,start:offset+i,end:offset+end+2});i=end+2;start=i;continue;}}}i++;
+    }
+    if(start<line.length)result.push({text:line.slice(start)});offset+=line.length;
+  }
+  return result;
+}
+function linkTargets(body) { return [...new Set(wikiSegments(body).filter(p=>p.target).map(p=>p.target))].slice(0,64); }
+function resolveLink(target,pages) {
+  const key=wikiKey(target),matches=pages.filter(p=>target===`id:${p.id}`||[p.path,p.title,...(p.aliases??[])].filter(Boolean).some(v=>wikiKey(v)===key));
+  const candidates=matches.map(({body,evidence,...p})=>p);
+  return {status:matches.length===1?'resolved':matches.length?'ambiguous':'missing',candidates:candidates.slice(0,20),hasMore:candidates.length>20};
+}
+function scorePage(page,query='') {
+  if(!query.trim())return 1;
+  const words=[...new Set(wikiKey(query).split(/[^\p{L}\p{N}_-]+/u).filter(w=>w.length>1))].slice(0,24);
+  const identities=[page.title,...(page.aliases??[]),page.path??''].map(wikiKey),body=wikiKey(page.body??'');
+  return words.reduce((score,w)=>score+(identities.some(v=>v===w)?20:identities.some(v=>v.includes(w))?8:body.includes(w)?1:0),0);
+}
+function markdownExport(page) {
+  const p=pageDefaults(page),line=(key,value)=>`${key}: ${JSON.stringify(value)}`;
+  return ['---',line('id',p.id),line('title',p.title),line('aliases',p.aliases),line('kind',p.kind),line('path',p.path),line('revision',p.revision),line('context',p.contextMode),line('evidence',p.evidence??[]),'---','',p.body,''].join('\n');
+}
+function browsePages(pages,folder='',offset=0,limit=20) {
+  requireValue(typeof folder==='string'&&(!folder||wikiPath(folder+'/_.md')),'Invalid folder');
+  const prefix=folder?folder+'/':'',entries=new Map();
+  for(const raw of pages){const p=pageDefaults(raw);if(!p.path.startsWith(prefix))continue;const tail=p.path.slice(prefix.length),slash=tail.indexOf('/');if(slash>=0){const name=tail.slice(0,slash),path=prefix+name;entries.set('folder:'+path,{type:'folder',path,name});}else entries.set('file:'+p.id,{type:'file',...p});}
+  const all=[...entries.values()].sort((a,b)=>a.type.localeCompare(b.type)||a.path.localeCompare(b.path));
+  return {entries:all.slice(offset,offset+limit),hasMore:all.length>offset+limit,nextOffset:all.length>offset+limit?offset+limit:null,folder};
 }
 
 class LiteStore {
   constructor(storage, notebook = 'default') {
     this.storage=storage; this.prefix=`lore:lite:v1:${boundedString(notebook,'notebook')}:`; this.writes=Promise.resolve();
   }
-  async index() { return await this.storage.getItem(this.prefix+'index') ?? []; }
+  async index() { return (await this.storage.getItem(this.prefix+'index') ?? []).map(pageDefaults); }
   async identity() { return {scope:{notebook:this.prefix}, audience:'world',mode:'device-local'}; }
   async list({query='',offset=0,limit=20}={}) {
     boundedString(query,'query',200,true);
     requireValue(Number.isInteger(offset)&&offset>=0&&Number.isInteger(limit)&&limit>=1&&limit<=128,'Invalid pagination');
-    const matches=(await this.index()).filter(p=>p.title.toLowerCase().includes(query.toLowerCase()));
+    const matches=(await this.index()).filter(p=>scorePage(p,query)>0);
     return {pages:matches.slice(offset,offset+limit),hasMore:matches.length>offset+limit,nextOffset:matches.length>offset+limit?offset+limit:null};
   }
   async page(id) {
     const entry=(await this.index()).find(p=>p.id===id);
     const page=entry && await this.storage.getItem(`${this.prefix}page:${id}:${entry.revision}`);
-    requireValue(page,'Page not found',404); return page;
+    requireValue(page,'Page not found',404); return pageDefaults(page);
   }
   put(id,input,expectedRevision) {
     const operation=this.writes.then(async()=>{
@@ -80,6 +148,10 @@ class LiteStore {
       const index=await this.index(),old=index.find(p=>p.id===id);
       requireValue((old?.revision??0)===expectedRevision,'Page revision conflict',409);
       requireValue(old || index.length<LIMITS.pages,'Lite notebook is full (128 pages)',413);
+      page.aliases=aliasesOf(page.aliases,page.title);
+      if(old&&old.title!==page.title)page.aliases=aliasesOf([...page.aliases,old.title],page.title);
+      page.path=wikiPath(page.path??old?.path??`${page.kind}/${id}.md`);
+      requireValue(!index.some(p=>p.id!==id&&p.path===page.path),'Path already exists',409);
       // Publish a small index pointer only after writing the immutable revision.
       await this.storage.setItem(`${this.prefix}page:${id}:${page.revision}`,page);
       const {body,evidence,...metadata}=page;
@@ -105,6 +177,9 @@ class LiteStore {
     }
     return result;
   }
+  async resolve(target){return resolveLink(target,await this.index());}
+  async browse(options={}){return browsePages(await this.index(),options.folder,options.offset,options.limit);}
+  async links(id){const page=await this.page(id),meta=await this.index(),backlinks=[];for(const row of meta){const p=await this.page(row.id);if(linkTargets(p.body).some(t=>{const r=resolveLink(t,meta);return r.status==='resolved'&&r.candidates[0].id===id;}))backlinks.push({id:p.id,title:p.title,path:p.path});}return {outgoing:linkTargets(page.body).map(target=>({target,...resolveLink(target,meta)})),backlinks};}
   close() {}
 }
 

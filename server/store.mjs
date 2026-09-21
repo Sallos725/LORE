@@ -1,3 +1,4 @@
+import {aliasesOf,wikiPath,pageDefaults,resolveLink,linkTargets,browsePages,scorePage} from '../shared/wiki.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash, randomUUID} from 'node:crypto';
 import {boundedString, requireValue, revision, scopeKey, validatePage, compileContext, canRead} from '../shared/core.mjs';
@@ -14,6 +15,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, scope TEXT, eventId TEXT, hash TEXT, payload TEXT, state TEXT, attempts INTEGER DEFAULT 0, error TEXT, createdAt INTEGER, updatedAt INTEGER, UNIQUE(scope,eventId));
       CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(state,createdAt);
       CREATE INDEX IF NOT EXISTS pages_source ON pages(scope,source);`);
+    this.db.function('lore_score', (data,query)=>scorePage(pageDefaults(JSON.parse(data)),query));
     this.db.prepare("UPDATE jobs SET state='queued' WHERE state='running'").run();
   }
   close() { this.db.close(); }
@@ -29,7 +31,7 @@ export class Store {
   }
   page(scope, id, audience = 'world') {
     const row = this.db.prepare('SELECT data FROM pages WHERE scope=? AND id=?').get(scopeKey(scope), id);
-    const page = row && JSON.parse(row.data);
+    const page = row && pageDefaults(JSON.parse(row.data));
     requireValue(page && canRead(page, audience), 'Page not found', 404);
     return page;
   }
@@ -39,10 +41,10 @@ export class Store {
     const rows = this.db.prepare(`SELECT data FROM pages WHERE scope=?
       AND (json_extract(data,'$.visibility')='public' OR json_extract(data,'$.visibility')=?)
       AND json_extract(data,'$.active')=1
-      AND instr(lower(json_extract(data,'$.title') || ' ' || json_extract(data,'$.body')),lower(?))>0
-      ORDER BY json_extract(data,'$.pinned') DESC,id LIMIT ? OFFSET ?`).all(scopeKey(scope), audience, query, limit + 1, offset);
+      AND lore_score(data,?)>0
+      ORDER BY lore_score(data,?) DESC,json_extract(data,'$.pinned') DESC,id LIMIT ? OFFSET ?`).all(scopeKey(scope), audience, query, query, limit + 1, offset);
     const hasMore = rows.length > limit;
-    const pages = rows.slice(0, limit).map(row => { const p = JSON.parse(row.data); if (!includeBody) { delete p.body; delete p.evidence; } return p; });
+    const pages = rows.slice(0, limit).map(row => { const p = pageDefaults(JSON.parse(row.data)); if (!includeBody) { delete p.body; delete p.evidence; } return p; });
     return {pages, hasMore, nextOffset: hasMore ? offset + limit : null, scopeRevision: this.head(scope)};
   }
   put(scope, id, input, expectedRevision, audience = 'world') {
@@ -56,10 +58,26 @@ export class Store {
       const previous = row && JSON.parse(row.data);
       requireValue(!previous || canRead(previous, audience), 'Page not found', 404);
       requireValue((previous?.revision ?? 0) === expectedRevision, 'Page revision conflict', 409);
-      const page = {...valid, id, revision: expectedRevision + 1, origin: 'manual', evidence: [], active: true};
+      valid.aliases=aliasesOf(valid.aliases,valid.title);
+      if(previous&&previous.title!==valid.title)valid.aliases=aliasesOf([...valid.aliases,previous.title],valid.title);
+      valid.path=wikiPath(valid.path??previous?.path??`${valid.kind}/${id}.md`);
+      requireValue(!this.metadata(scope,audience).some(p=>p.id!==id&&p.path===valid.path),'Path already exists',409);
+      const page = {...valid, id, revision: expectedRevision + 1, origin: 'manual', evidence: previous?.evidence??[], active: previous?.active??true};
       this.save(key, page);
       return page;
     });
+  }
+  metadata(scope,audience='world') {
+    return this.db.prepare("SELECT json_remove(data,'$.body','$.evidence') AS data FROM pages WHERE scope=? AND json_extract(data,'$.active')=1 AND (json_extract(data,'$.visibility')='public' OR json_extract(data,'$.visibility')=?)").all(scopeKey(scope),audience).map(r=>pageDefaults(JSON.parse(r.data)));
+  }
+  resolve(scope,target,audience='world'){return resolveLink(target,this.metadata(scope,audience));}
+  browse(scope,options={}){return browsePages(this.metadata(scope,options.audience),options.folder,options.offset,options.limit);}
+  links(scope,id,audience='world'){
+    const page=this.page(scope,id,audience),meta=this.metadata(scope,audience);
+    const outgoing=linkTargets(page.body).map(target=>({target,...resolveLink(target,meta)}));
+    const backlinks=[];
+    for(const row of this.db.prepare('SELECT data FROM pages WHERE scope=?').iterate(scopeKey(scope))){const p=JSON.parse(row.data);if(p.active&&canRead(p,audience)&&linkTargets(p.body).some(t=>{const r=resolveLink(t,meta);return r.status==='resolved'&&r.candidates[0].id===id;}))backlinks.push({id:p.id,title:p.title,path:pageDefaults(p).path});if(backlinks.length===100)break;}
+    return {outgoing,backlinks};
   }
   history(scope, id, audience = 'world', offset = 0) {
     this.page(scope, id, audience);

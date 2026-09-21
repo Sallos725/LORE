@@ -1,20 +1,21 @@
+import {aliasesOf,wikiPath,pageDefaults,resolveLink,linkTargets,browsePages,scorePage} from '../shared/wiki.mjs';
 import {LIMITS, requireValue, boundedString, revision, validatePage, compileContext} from '../shared/core.mjs';
 export class LiteStore {
   constructor(storage, notebook = 'default') {
     this.storage=storage; this.prefix=`lore:lite:v1:${boundedString(notebook,'notebook')}:`; this.writes=Promise.resolve();
   }
-  async index() { return await this.storage.getItem(this.prefix+'index') ?? []; }
+  async index() { return (await this.storage.getItem(this.prefix+'index') ?? []).map(pageDefaults); }
   async identity() { return {scope:{notebook:this.prefix}, audience:'world',mode:'device-local'}; }
   async list({query='',offset=0,limit=20}={}) {
     boundedString(query,'query',200,true);
     requireValue(Number.isInteger(offset)&&offset>=0&&Number.isInteger(limit)&&limit>=1&&limit<=128,'Invalid pagination');
-    const matches=(await this.index()).filter(p=>p.title.toLowerCase().includes(query.toLowerCase()));
+    const matches=(await this.index()).filter(p=>scorePage(p,query)>0);
     return {pages:matches.slice(offset,offset+limit),hasMore:matches.length>offset+limit,nextOffset:matches.length>offset+limit?offset+limit:null};
   }
   async page(id) {
     const entry=(await this.index()).find(p=>p.id===id);
     const page=entry && await this.storage.getItem(`${this.prefix}page:${id}:${entry.revision}`);
-    requireValue(page,'Page not found',404); return page;
+    requireValue(page,'Page not found',404); return pageDefaults(page);
   }
   put(id,input,expectedRevision) {
     const operation=this.writes.then(async()=>{
@@ -24,6 +25,10 @@ export class LiteStore {
       const index=await this.index(),old=index.find(p=>p.id===id);
       requireValue((old?.revision??0)===expectedRevision,'Page revision conflict',409);
       requireValue(old || index.length<LIMITS.pages,'Lite notebook is full (128 pages)',413);
+      page.aliases=aliasesOf(page.aliases,page.title);
+      if(old&&old.title!==page.title)page.aliases=aliasesOf([...page.aliases,old.title],page.title);
+      page.path=wikiPath(page.path??old?.path??`${page.kind}/${id}.md`);
+      requireValue(!index.some(p=>p.id!==id&&p.path===page.path),'Path already exists',409);
       // Publish a small index pointer only after writing the immutable revision.
       await this.storage.setItem(`${this.prefix}page:${id}:${page.revision}`,page);
       const {body,evidence,...metadata}=page;
@@ -49,5 +54,8 @@ export class LiteStore {
     }
     return result;
   }
+  async resolve(target){return resolveLink(target,await this.index());}
+  async browse(options={}){return browsePages(await this.index(),options.folder,options.offset,options.limit);}
+  async links(id){const page=await this.page(id),meta=await this.index(),backlinks=[];for(const row of meta){const p=await this.page(row.id);if(linkTargets(p.body).some(t=>{const r=resolveLink(t,meta);return r.status==='resolved'&&r.candidates[0].id===id;}))backlinks.push({id:p.id,title:p.title,path:p.path});}return {outgoing:linkTargets(page.body).map(target=>({target,...resolveLink(target,meta)})),backlinks};}
   close() {}
 }

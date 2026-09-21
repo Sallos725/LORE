@@ -21,8 +21,10 @@ export function validatePage(input) {
     body: boundedString(input.body, 'body', LIMITS.pageBytes),
     visibility: input.visibility ?? 'public',
     pinned: input.pinned ?? true,
+    aliases: input.aliases ?? [], path: input.path, contextMode: input.contextMode ?? 'auto',
   };
-  requireValue(['person', 'event', 'scene'].includes(page.kind), 'Invalid page kind');
+  requireValue(['person', 'event', 'scene', 'location', 'faction', 'item', 'concept', 'note'].includes(page.kind), 'Invalid page kind');
+  requireValue(['auto','always','never'].includes(page.contextMode), 'Invalid context mode');
   boundedString(page.visibility, 'visibility');
   requireValue(typeof page.pinned === 'boolean', 'Invalid pinned');
   requireValue(new TextEncoder().encode(page.body).length <= LIMITS.pageBytes, 'Page body too large', 413);
@@ -35,16 +37,19 @@ export function compileContext(pages, {budgetBytes = 4096, audience = 'world'} =
   requireValue(Number.isInteger(budgetBytes) && budgetBytes >= 0 && budgetBytes <= LIMITS.contextBytes, 'Invalid budgetBytes');
   const included = [], excluded = [];
   let text = '', usedBytes = 0;
-  for (const page of pages) {
+  let requiredOverflow=false;
+  for (const page of [...pages].sort((a,b)=>Number(b.contextMode==='always')-Number(a.contextMode==='always'))) {
     // Do not disclose the existence of inaccessible pages.
     if (!canRead(page, audience)) continue;
+    if(page.contextMode==='never'){excluded.push({id:page.id,reason:'disabled'});continue;}
     if (page.active === false) { excluded.push({id: page.id, reason: 'invalidated-evidence'}); continue; }
     const block = `## ${page.title}\n${page.body}\n\n`;
     const bytes = new TextEncoder().encode(block).length;
-    if (usedBytes + bytes > budgetBytes) { excluded.push({id: page.id, reason: 'budget'}); continue; }
+    if (usedBytes + bytes > budgetBytes) { if(page.contextMode==='always')requiredOverflow=true; excluded.push({id: page.id, reason: page.contextMode==='always'?'required-budget':'budget'}); continue; }
     text += block;
     usedBytes += bytes;
     included.push({id: page.id, revision: page.revision, origin: page.origin, evidence: page.evidence ?? []});
   }
-  return {text, usedBytes, budgetBytes, included, excluded, budgetUnit: 'utf8-bytes', fullPromptChecked: false};
+  if(requiredOverflow){text='';usedBytes=0;included.length=0;}
+  return {text, requiredOverflow, usedBytes, budgetBytes, included, excluded, budgetUnit: 'utf8-bytes', fullPromptChecked: false};
 }
