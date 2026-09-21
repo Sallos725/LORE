@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {LIMITS, boundedString, requireValue, scopeKey} from '../shared/core.mjs';
 const digest = value => createHash('sha256').update(value).digest('hex');
 
-export function createServer(store, credentials, {workerInterval = 250} = {}) {
+export function createServer(store, credentials, {workerInterval = 250, extractor = null} = {}) {
   requireValue(Array.isArray(credentials) && credentials.length > 0 && credentials.length <= 128, 'Configure 1–128 credentials');
   const principals = new Map();
   for (const item of credentials) {
@@ -79,9 +79,9 @@ export function createServer(store, credentials, {workerInterval = 250} = {}) {
   server.headersTimeout = 10000; server.requestTimeout = 15000; server.maxHeadersCount = 40;
   server.maxConnections = 64;
   const timer = workerInterval > 0 ? setInterval(() => {
-    try { store.runOne(); } catch { console.error('LORE worker unavailable; check storage health'); }
+    try { if(extractor)store.runExtraction(extractor).catch(()=>{});else store.runOne(); } catch { console.error('LORE worker unavailable; check storage health'); }
   },workerInterval) : null;
   timer?.unref();
-  server.on('close', () => clearInterval(timer));
+  server.on('close', () => {clearInterval(timer);store.activeExtraction?.controller.abort();});
   return server;
 }

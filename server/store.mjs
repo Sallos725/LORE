@@ -1,3 +1,4 @@
+import {installMemory} from './memory.mjs';
 import {aliasesOf,wikiPath,pageDefaults,resolveLink,linkTargets,browsePages,scorePage} from '../shared/wiki.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash, randomUUID} from 'node:crypto';
@@ -15,17 +16,21 @@ export class Store {
       CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, scope TEXT, eventId TEXT, hash TEXT, payload TEXT, state TEXT, attempts INTEGER DEFAULT 0, error TEXT, createdAt INTEGER, updatedAt INTEGER, UNIQUE(scope,eventId));
       CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(state,createdAt);
       CREATE INDEX IF NOT EXISTS pages_source ON pages(scope,source);`);
+    this.memorySchema();
     this.db.function('lore_score', (data,query)=>scorePage(pageDefaults(JSON.parse(data)),query));
     this.db.prepare("UPDATE jobs SET state='queued' WHERE state='running'").run();
   }
   close() { this.db.close(); }
   transaction(fn) {
-    this.db.exec('BEGIN IMMEDIATE');
+    if(this.inTransaction)return fn();
+    this.db.exec('BEGIN IMMEDIATE');this.inTransaction=true;
     try { const result = fn(); this.db.exec('COMMIT'); return result; }
-    catch (error) { this.db.exec('ROLLBACK'); throw error; }
+    catch (error) { this.db.exec('ROLLBACK'); throw error; }finally{this.inTransaction=false;}
   }
   head(scope) { return this.db.prepare('SELECT revision FROM scopes WHERE scope=?').get(scopeKey(scope))?.revision ?? 0; }
   save(key, page, source = null) {
+    this.db.prepare('DELETE FROM evidence WHERE scope=? AND page=?').run(key,page.id);
+    for(const e of page.evidence??[])this.db.prepare('INSERT OR IGNORE INTO evidence VALUES (?,?,?,?)').run(key,page.id,e.messageId,e.revision);
     this.db.prepare('INSERT OR REPLACE INTO pages VALUES (?,?,?,?)').run(key, page.id, source, JSON.stringify(page));
     this.db.prepare('INSERT INTO history VALUES (?,?,?,?)').run(key, page.id, page.revision, JSON.stringify(page));
   }
@@ -128,7 +133,7 @@ export class Store {
         requireValue(change.revision > (source?.revision ?? 0), 'Message revision conflict', 409);
         this.db.prepare('INSERT INTO source_versions VALUES (?,?,?,?)').run(key, change.id, change.revision, JSON.stringify(change));
         this.db.prepare('INSERT OR REPLACE INTO sources VALUES (?,?,?,?,?)').run(key, change.id, change.revision, change.op === 'delete' ? '' : change.text, Number(change.op === 'delete'));
-        const rows = this.db.prepare('SELECT data FROM pages WHERE scope=? AND source=?').all(key, change.id);
+        const rows = this.db.prepare('SELECT data FROM pages WHERE scope=? AND (source=? OR id IN (SELECT page FROM evidence WHERE scope=? AND message=?))').all(key, change.id,key,change.id);
         for (const row of rows) {
           const page = JSON.parse(row.data);
           if (page.active) this.save(key, {...page, active: false, revision: page.revision + 1}, change.id);
@@ -146,7 +151,8 @@ export class Store {
   }
   cancel(scope, id) {
     this.job(scope, id);
-    this.db.prepare("UPDATE jobs SET state='cancelled',updatedAt=? WHERE scope=? AND id=? AND state='queued'").run(Date.now(), scopeKey(scope), id);
+    this.db.prepare("UPDATE jobs SET state='cancelled',updatedAt=? WHERE scope=? AND id=? AND state IN ('queued','running')").run(Date.now(), scopeKey(scope), id);
+    if(this.activeExtraction?.id===id)this.activeExtraction.controller.abort();
     return this.job(scope, id);
   }
   runOne() {
@@ -178,3 +184,5 @@ export class Store {
     return true;
   }
 }
+
+installMemory(Store);
