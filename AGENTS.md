@@ -13,7 +13,7 @@ LORE는 PocketRisu에서 사용하는 **위키 기반 장기 서사 기억 플�
 
 ## 현재 상태와 작업 범위
 
-2026-09-22에 0.1.0-alpha.4를 준비했다. 별도 scope token을 제거하고 기존 PocketRisu 로그인으로 Full을 인증한다. 저장된 chaId/chat.id별로 위키·원문·이력·작업·검색·주입을 분리하고 채팅 전환을 따라간다. Lite는 자동 노트북·전체 백업/복원, Full은 SQLite·영속 추출 설정/작업을 제공한다. 공통 beforeRequest에서 현재 질문과 최근 대화로 관련 기억을 검색해 예산 안에서 주입한다. 선택적 OpenAI 최종 body 검사를 유지한다. 큐 정체·늦은 주입 상태·숫자 인덱스 호환·HTTP 저장 재전송을 수정했다. 실제 원본 호스트·합성 LLM 검증 근거와 원격 배포 상태는 docs/status.md, docs/public-readiness.md를 확인한다. iPhone 실기기 OOM은 미검증이며 공개 테스트 버전이다. Gitea Actions 실패 조사는 사용자 지시에 따라 보류한다.
+2026-09-22에 0.1.0-alpha.4를 GitHub Actions로 발행했다. latest도 같은 amd64/arm64 이미지이며 공개 파일 6개를 다운로드해 체크섬과 로컬 빌드 일치를 검증했다. 별도 scope token을 제거하고 기존 PocketRisu 로그인으로 Full을 인증한다. 저장된 chaId/chat.id별로 위키·원문·이력·작업·검색·주입을 분리하고 채팅 전환을 따라간다. Lite는 자동 노트북·전체 백업/복원, Full은 SQLite·영속 추출 설정/작업을 제공한다. 공통 beforeRequest에서 현재 질문과 최근 대화로 관련 기억을 검색해 예산 안에서 주입한다. 선택적 OpenAI 최종 body 검사를 유지한다. 큐 정체·늦은 주입 상태·숫자 인덱스 호환·HTTP 저장 재전송을 수정했다. 실제 원본 호스트·합성 LLM 검증 근거와 원격 배포 상태는 docs/status.md, docs/public-readiness.md를 확인한다. iPhone 실기기 OOM은 미검증이며 공개 테스트 버전이다. Gitea Actions 실패 조사는 사용자 지시에 따라 보류한다.
 
 - LORE를 독립 프로젝트로 개발한다. 기본 작업 범위는 이 디렉터리다.
 - 상위 작업 공간의 오래된 NodeOnly 프로토타입 설명을 현재 PocketRisu API의 증거로 사용하지 않는다. 실제 대상 버전과 소스를 확인한다.

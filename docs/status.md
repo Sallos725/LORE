@@ -20,7 +20,9 @@ Node 53개, Python 8개. Chromium/WebKit 양쪽 Lite/Full UI·백업/복원·자
 
 ## 배포 상태
 
-이 문서는 alpha.4 릴리스 준비 시 작성했다. 실제 원격 발행 상태·Actions URL·이미지 digest는 완료 후 아래에 추가한다. 기존 alpha.3과 latest의 발행 결과는 docs/releasing.md에 보존한다. GitHub를 우선하며 Gitea Actions 실패 조사는 사용자 지시에 따라 보류한다. main 소스는 양쪽 SSH로 동기화하고 새 버전 태그는 GitHub에만 보낸다.
+2026-09-22(KST): [alpha.4](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.4)를 발행했다. 태그 커밋은 `29f80b1a06d86cf913c16a268c6d630866905fc2`다. [CI](https://github.com/Sallos725/LORE/actions/runs/35616932756)와 [Release](https://github.com/Sallos725/LORE/actions/runs/35617271733) 모두 성공했다. 다운로드한 6개 파일이 SHA256SUMS 및 로컬 재현 빌드와 모두 일치한다. `latest`와 `v0.1.0-alpha.4`는 같은 amd64/arm64 index `sha256:615da22920c742bf3e92c109d612d3680c850a45a07844ca61c165f6704b7e31`다. 빈 Docker 인증 설정의 실제 latest pull도 성공했다. 기존 alpha.3 기록은 docs/releasing.md에 보존한다.
+
+main 소스는 GitHub/Gitea 양쪽 SSH로 동기화했다. Gitea Actions 실패 조사는 사용자 지시에 따라 보류하며 alpha.4 배포 태그는 GitHub에만 보냈다. 태그 이후 커밋은 릴리스 설명 생성 문구와 실제 배포 기록 갱신이다. 기존 릴리스 첨부 파일과 태그는 교체하지 않았다.
 
 ## 남은 범위
 

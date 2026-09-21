@@ -52,3 +52,13 @@ gh workflow run promote-latest.yml --repo Sallos725/LORE -f release_tag=v0.1.0-a
 ```
 
 자동 Release와 수동 승격은 같은 concurrency group을 사용한다. Gitea의 다음 Release에도 성공 후 latest 갱신 단계를 넣었지만, 현재 Gitea Actions 실행은 계속 보류한다. [Docker imagetools create](https://docs.docker.com/reference/cli/docker/buildx/imagetools/create/)의 단일 index 복사 기능을 사용한다.
+
+## alpha.4 발행 결과
+
+2026-09-22(KST): [v0.1.0-alpha.4](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.4), 태그 커밋 `29f80b1a06d86cf913c16a268c6d630866905fc2`를 발행했다. [CI](https://github.com/Sallos725/LORE/actions/runs/35616932756)와 [Release](https://github.com/Sallos725/LORE/actions/runs/35617271733)가 모두 성공했다. 순정 PocketRisu에서 Lite/Full 설치·독립 추출·실제 Gemini 요청 주입을 배포 조건으로 검사한다. 공개 첨부 6개를 다운로드해 SHA256SUMS와 로컬 재현 빌드 일치를 확인했다.
+
+- `latest` = `v0.1.0-alpha.4` index: `sha256:615da22920c742bf3e92c109d612d3680c850a45a07844ca61c165f6704b7e31`
+- amd64: `sha256:971d3bbb363376d10b3a01c2d5180044eda8ce63f58a8953036dbd5ab712f6de`
+- arm64: `sha256:207b5a3767fc1ce65ba7406e93384ec14376c01c3d874543cbda22f9f46bf3b3`
+
+로그인 없는 GHCR manifest 조회로 두 버전과 플랫폼을 대조했다. 빈 Docker 인증 설정으로 latest pull도 성공했다. Gitea에는 main 소스만 동기화했고 배포 태그/Actions 조사는 보류했다. 실행 중인 사용자 스택은 교체하지 않았다.
