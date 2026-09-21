@@ -70,8 +70,8 @@ def publish(api, dist, expected_tag, commit):
     if not re.fullmatch(r'[a-f0-9]{40}', commit):
         raise ValueError('Expected checked-out commit SHA')
     assets = manifest['assets']
-    if len(assets) != 4 or len(set(assets)) != 4:
-        raise ValueError('Expected four distinct release assets')
+    if len(assets) != 5 or len(set(assets)) != 5:
+        raise ValueError('Expected five distinct release assets')
     for name in assets:
         if Path(name).name != name or not name.startswith('lore-'):
             raise ValueError('Unsafe asset name')

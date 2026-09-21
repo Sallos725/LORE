@@ -1,9 +1,14 @@
 services:
   lore:
-    image: ${LORE_IMAGE:-ghcr.io/sallos725/lore}:${LORE_VERSION:-v0.1.0-alpha.1}
+    image: ${LORE_IMAGE:-ghcr.io/sallos725/lore}:${LORE_VERSION:-v0.1.0-alpha.2}
     build: .
     environment:
       LORE_CREDENTIALS_JSON: ${LORE_CREDENTIALS_JSON:?Set scoped credentials in .env}
+      LORE_LLM_URL: ${LORE_LLM_URL:-}
+      LORE_LLM_MODEL: ${LORE_LLM_MODEL:-}
+      LORE_LLM_API_KEY: ${LORE_LLM_API_KEY:-}
+      LORE_LLM_TIMEOUT_MS: ${LORE_LLM_TIMEOUT_MS:-45000}
+      LORE_LLM_JSON_MODE: ${LORE_LLM_JSON_MODE:-false}
     volumes:
       - lore-data:/data
     expose:

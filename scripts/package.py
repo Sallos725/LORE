@@ -28,7 +28,7 @@ def build(tag=None):
         name = f'lore-{edition}-{expected}.js'
         (dist / name).write_bytes(data)
         assets.append(name)
-    common = ['package.json', 'LICENSE', 'README.md', 'run.sh']
+    common = ['package.json', 'LICENSE', 'README.md', 'run.sh', 'scripts/install-host.py', 'integration/pocketrisu-lore.mjs']
     common += [str(p.relative_to(ROOT)) for folder in ('server', 'shared', 'docs') for p in sorted((ROOT / folder).glob('*.m*'))]
     # Include .md documentation, as well as executable .mjs modules.
     common = sorted(set(common))
@@ -43,13 +43,16 @@ def build(tag=None):
     assets.append(server_name)
     full_name = f'lore-full-{expected}.zip'
     files = common + ['Dockerfile', '.dockerignore', 'docker-compose.yml', '.env.example', 'full/plugin/lore-full.js']
-    with zipfile.ZipFile(dist / full_name, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-        for name in files:
-            info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
-            info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = (0o100755 if name == 'run.sh' else 0o100644) << 16
-            archive.writestr(info, (ROOT / name).read_bytes())
-    assets.append(full_name)
+    host_name = f'lore-pocketrisu-host-{expected}.zip'
+    host_files = ['scripts/install-host.py', 'integration/pocketrisu-lore.mjs', 'docs/automation.md', 'LICENSE']
+    for zip_name, members in [(full_name, files), (host_name, host_files)]:
+        with zipfile.ZipFile(dist / zip_name, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for name in members:
+                info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = (0o100755 if name == 'run.sh' else 0o100644) << 16
+                archive.writestr(info, (ROOT / name).read_bytes())
+        assets.append(zip_name)
     checksums = {name: hashlib.sha256((dist / name).read_bytes()).hexdigest() for name in assets}
     manifest = {'version': version, 'tag': expected, 'assets': assets, 'sha256': checksums}
     (dist / 'release.json').write_text(json.dumps(manifest, indent=2) + '\n')

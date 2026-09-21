@@ -70,5 +70,10 @@ for name in manifest['assets']:
                 names = archive.getnames()
                 archive.extractall(directory, filter='data')
         assert all(not any(p in ('.env', '.git', 'node_modules', 'data') for p in Path(n).parts) for n in names)
-        smoke(directory)
+        if 'server/main.mjs' in names:
+            smoke(directory)
+        else:
+            assert sorted(names)==sorted(['scripts/install-host.py','integration/pocketrisu-lore.mjs','docs/automation.md','LICENSE'])
+            subprocess.run(['node','--check',str(directory/'integration/pocketrisu-lore.mjs')],check=True)
+            compile((directory/'scripts/install-host.py').read_text(),'install-host.py','exec')
     print('PASS installed', name)

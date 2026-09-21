@@ -31,7 +31,7 @@ class ReleaseTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.dist = Path(self.temp.name)
-        assets = ['lore-lite.js', 'lore-full.js', 'lore-full.zip', 'lore-server.tar.gz']
+        assets = ['lore-lite.js', 'lore-full.js', 'lore-full.zip', 'lore-server.tar.gz', 'lore-pocketrisu-host.zip']
         for name in assets:
             (self.dist / name).write_bytes(b'fixture')
         checksums = {name: hashlib.sha256((self.dist / name).read_bytes()).hexdigest() for name in assets}
@@ -44,7 +44,7 @@ class ReleaseTests(unittest.TestCase):
         api = FakeAPI()
         self.run_publish(api)
         self.assertEqual(api.calls[-1], ('PATCH', '/releases/1', {'draft': False}))
-        self.assertEqual(sum(call[0] == 'UPLOAD' for call in api.calls), 6)
+        self.assertEqual(sum(call[0] == 'UPLOAD' for call in api.calls), 7)
         create = next(call for call in api.calls if call[:2] == ('POST', '/releases'))
         self.assertTrue(create[2]['prerelease'])
     def test_upload_failure_keeps_release_draft(self):
