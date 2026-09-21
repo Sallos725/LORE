@@ -1,14 +1,25 @@
+import {AutoMemory} from './runtime.mjs';
+import {createExtractor} from '../shared/extraction.mjs';
 import {LiteStore} from './lite-store.mjs';
 import {FullStore} from './full-store.mjs';
 import {openUI} from './ui.mjs';
 export async function install(host,edition) {
-  let ui=null,alive=true;const registrations=[];
+  let ui=null,alive=true;const registrations=[],notebooks=new Map(),runtime=new AutoMemory(host);
+  const getStore=async options=>{if(edition==='Full')return new FullStore(host,options.url,options.token);if(!notebooks.has(options.notebook))notebooks.set(options.notebook,new LiteStore(await host.getLocalPluginStorage(),options.notebook));return notebooks.get(options.notebook);};
+  let autoStore=null,llmBusy=false;
+  const automation={status:()=>runtime.state,stop:async()=>{await runtime.stop();autoStore?.close();autoStore=null;},start:async options=>{
+    await automation.stop();autoStore=await getStore(options);
+    // Native fetch transfers a response through RPC; avoid nonserializable signals
+    // and never overlap an unabortable provider request after its local deadline.
+    const providerFetch=async(url,{signal,...args})=>{if(llmBusy)throw Error('이전 LLM 요청이 아직 끝나지 않았습니다.');llmBusy=true;try{return await host.nativeFetch(url,args);}finally{llmBusy=false;}};
+    try{await runtime.start({store:autoStore,memoryBudget:options.memoryBudget,extractor:edition==='Lite'?createExtractor(options.llm,providerFetch):null});}catch(error){autoStore?.close();autoStore=null;throw error;}
+  }};
   const open=async()=>{
     if(!alive)return;ui?.close();
-    ui=openUI({edition,host,connect:async options=>edition==='Full'?new FullStore(host,options.url,options.token):new LiteStore(await host.getLocalPluginStorage(),options.notebook)});
+    ui=openUI({edition,host,connect:getStore,automation});
     await host.showContainer('fullscreen');
   };
-  const dispose=async()=>{alive=false;ui?.close();ui=null;for(const id of registrations)await host.unregisterUIPart?.(id);registrations.length=0;await host.hideContainer?.();};
+  const dispose=async()=>{alive=false;await automation.stop();notebooks.clear();ui?.close();ui=null;for(const id of registrations)await host.unregisterUIPart?.(id);registrations.length=0;await host.hideContainer?.();};
   await host.onUnload(dispose);
   const setting=await host.registerSetting(`LORE ${edition}`,open,'📖','html',`lore-${edition.toLowerCase()}-settings`);
   if(setting?.id)registrations.push(setting.id);
