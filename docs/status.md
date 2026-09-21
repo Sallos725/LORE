@@ -27,7 +27,7 @@ Node 테스트 43개: 원문·revision·범위·분기·큐 복구, 공급자별
 - Release에서 Node 43개·Python 5개, Chromium/WebKit 각각 Lite/Full, 서버 패키지 설치 실행, 격리 컨테이너 재시작 보존 검사가 통과했다. 실제 PocketRisu의 msgpackr 1.11.9 encoder로 Unicode·undefined·타임스탬프·20/128/500개 배열 디코딩도 확인했고 작은 fixture를 회귀 테스트에 포함했다.
 - GitHub/Gitea SSH main push 성공. Gitea에는 alpha.3 태그를 보내지 않았다. 실행 중인 PocketRisu·상위 서비스는 변경하지 않았다.
 
-이전 [alpha.2](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2)는 GitHub에서 실제 발행했다. 이 버전은 호스트 패치를 요구하므로 새 설치에는 alpha.3 이후를 사용한다. 이전 게시 파일과 태그는 덮어쓰지 않는다. GitHub PRIVATE 설정은 유지한다.
+이전 [alpha.2](https://github.com/Sallos725/LORE/releases/tag/v0.1.0-alpha.2)는 GitHub에서 실제 발행했다. 이 버전은 호스트 패치를 요구하므로 새 설치에는 alpha.3 이후를 사용한다. 이전 게시 파일과 태그는 덮어쓰지 않는다. 2026-09-21 공개 준비도 점검 시 GitHub visibility는 PUBLIC으로 확인했다. 이번 작업에서 공개 범위는 변경하지 않았다.
 
 Gitea는 SSH main 소스 동기화만 유지한다. 사용자 승인으로 기존 tea 자격 증명을 배포 secrets에 등록했지만, 사용자 지시에 따라 실패 조사와 태그 배포를 보류했다.
 
@@ -40,3 +40,9 @@ Gitea는 SSH main 소스 동기화만 유지한다. 사용자 승인으로 기�
 5. 수정은 전체 범위를 재조정한다. 부분 변경 최적화·대형 위키 관리·실기기 메모리 및 장기 의미 품질 평가가 남는다.
 
 [설정](automation.md) · [소스 계약](compatibility.md) · [모바일 검증](mobile-testing.md)
+
+## latest 및 공개 준비도 점검
+
+- [Promote latest 35606127318](https://github.com/Sallos725/LORE/actions/runs/35606127318) 성공. `latest`는 `v0.1.0-alpha.3`과 같은 index이며 digest는 `sha256:b3160e95b875f53687e1b526142cec3307f1e6dbc8855c8f7005f9455806b005`다. GitHub Actions의 실제 docker pull과 별도의 익명 GHCR manifest 조회에서 amd64/arm64 접근을 확인했다.
+- [latest 변경 CI 35606063946](https://github.com/Sallos725/LORE/actions/runs/35606063946) 성공. 다음 Release는 첨부 파일 발행 성공 뒤 latest를 갱신한다. Compose 기본값은 latest이며 현재 알파를 포함한다. Gitea 실행은 계속 보류한다.
+- [공개 준비도](public-readiness.md): 개발자 대상 알파 공개 가능, 일반 사용자 안정판 배포는 미완료. Full queued 작업 128개 후보 제한에 따른 뒤쪽 작업 정체와 주입 timeout 이후 잘못된 성공 상태를 합성 데이터로 재현했다. 런타임 수정은 별도 다음 변경 대상이다.

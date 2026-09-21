@@ -10,6 +10,8 @@ PocketRisu용 위키 기반 장기 기억 플러그인. **0.1.0-alpha.3은 Pocke
 | 저장 | 기기별 문서·원문 키, 문서/원문 각각 128개 | 서버 SQLite, 원문 revision·전체 이력·영속 작업 |
 | 탭 종료 후 | 추출 중단, 다시 시작해 재개 | 이미 수락한 작업 계속 처리 |
 
+**공개 상태: 개발 알파.** 배포·합성 테스트는 통과했으며, 실제 PocketRisu 설치와 iPhone Safari 검증 및 재현된 작업 처리·상태 표시 문제의 보완이 남아 있다. 현재는 개발·테스트 참여자용으로 제공한다. [공개 준비도 점검](docs/public-readiness.md)에 재현 조건과 일반 사용자 배포 전 할 일을 기록했다.
+
 공급자는 OpenAI, OpenRouter, Anthropic, Google Gemini, Ollama, 사용자 지정 OpenAI 호환 API를 지원한다. 두 판 모두 플러그인에서 **공급자·API 주소·모델 ID·키**를 설정한다. Full은 서버 환경 변수의 모델을 사용할 수도 있다.
 
 ## 설치
