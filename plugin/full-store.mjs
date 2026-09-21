@@ -1,7 +1,7 @@
 import {requireValue} from '../shared/core.mjs';
 export function connectionURL(value) {
   const url=new URL(value);
-  requireValue(url.protocol==='https:' || (url.protocol==='http:' && ['localhost','127.0.0.1','[::1]'].includes(url.hostname)), 'Full URL은 HTTPS 또는 localhost HTTP를 사용하세요.');
+  requireValue(['https:','http:'].includes(url.protocol), 'Full URL은 HTTP 또는 HTTPS를 사용하세요.');
   requireValue(!url.username&&!url.password&&!url.search&&!url.hash,'URL에 credential/query/fragment를 넣지 마세요.');
   return url.href.replace(/\/$/,'');
 }
@@ -14,7 +14,7 @@ export class FullStore {
     // request even after the UI deadline; late completion cannot update a closed UI.
     const pending=(async()=>{
       try {
-        const response=await this.host.nativeFetch(this.url+path,{method,headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})});
+        const response=await this.host.nativeFetch(this.url+path,{method,requestTimeoutMs:10000,headers:{authorization:`Bearer ${this.token}`,'content-type':'application/json'},...(data===undefined?{}:{body:JSON.stringify(data)})});
         const text=await response.text(); requireValue(text.length<=524288,'응답 크기 제한 초과');
         const result=JSON.parse(text); requireValue(response.ok,result.error??`HTTP ${response.status}`,response.status);
         requireValue(!this.closed,'UI가 닫혔습니다.'); return result;
@@ -23,6 +23,8 @@ export class FullStore {
     try { return await Promise.race([pending,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('연결 시간 초과. 저장 결과는 다시 조회하세요.')),10000);})]); }
     finally {clearTimeout(timer);}
   }
+  configureLLM(config){return this.request('/llm','POST',config);}
+  capture(data){return this.request('/capture','POST',data);}
   identity(){return this.request('/identity');}
   list({query='',offset=0,limit=20}={}){return this.request(`/wiki?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`);}
   page(id){return this.request('/wiki/'+encodeURIComponent(id));}

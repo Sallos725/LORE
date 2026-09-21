@@ -1,3 +1,4 @@
+import {providerConfig,providerRequest,providerText} from './providers.mjs';
 import {boundedString,requireValue,validatePage,revision} from './core.mjs';
 import {aliasesOf,wikiPath} from './wiki.mjs';
 export function extractionMessages(input) {
@@ -30,19 +31,18 @@ export function validateExtraction(value,input) {
   });
 }
 export function createExtractor(config,fetcher=fetch) {
-  const url=new URL(config.url);requireValue(['https:','http:'].includes(url.protocol)&&!url.username&&!url.password&&!url.hash,'Invalid LLM URL');
-  boundedString(config.model,'model',160);
-  const timeoutMs=Number(config.timeoutMs??45000);requireValue(Number.isInteger(timeoutMs)&&timeoutMs>=100&&timeoutMs<=120000,'Invalid LLM timeout');
+  config=providerConfig(config);const timeoutMs=config.timeoutMs;
   return async(input,{signal}={})=>{
     const controller=new AbortController(),abort=()=>controller.abort();signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
     let timer;
     const work=(async()=>{
-      const response=await fetcher(url.href,{method:'POST',signal:controller.signal,headers:{'content-type':'application/json',...(config.apiKey?{authorization:`Bearer ${config.apiKey}`}:{})},body:JSON.stringify({model:config.model,messages:extractionMessages(input),temperature:0,max_tokens:4096,...(config.jsonMode===false?{}:{response_format:{type:'json_object'}})})});
+      const request=providerRequest(config,extractionMessages(input));
+      const response=await fetcher(request.url,{method:'POST',signal:controller.signal,redirect:'error',headers:request.headers,body:JSON.stringify(request.body)});
       requireValue(response.ok,`LLM HTTP ${response.status}`,502);
       const reader=response.body?.getReader();let text='';
       if(reader){let bytes=0;try{const decoder=new TextDecoder();while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.byteLength;requireValue(bytes<=65536,'LLM response exceeds 64 KiB',502);text+=decoder.decode(value,{stream:true});}text+=decoder.decode();}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}}
       else {text=await response.text();requireValue(new TextEncoder().encode(text).length<=65536,'LLM response exceeds 64 KiB',502);}
-      const envelope=JSON.parse(text);return validateExtraction(JSON.parse(envelope.choices?.[0]?.message?.content??''),input);
+      const envelope=JSON.parse(text);return validateExtraction(JSON.parse(providerText(request.format,envelope)),input);
     })();
     try{return await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('LLM timeout'));},timeoutMs);controller.signal.addEventListener('abort',()=>reject(new Error('LLM cancelled or timed out')),{once:true});})]);}
     finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}

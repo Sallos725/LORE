@@ -24,8 +24,9 @@ test('Lite page cap and UTF-8 body cap',async()=>{
   await assert.rejects(a.put('overflow',page,0),/full/);
   await assert.rejects(a.put('p0',{...page,body:'한'.repeat(6000)},1),/large/);
 });
-test('Full transport rejects insecure remote URL, handles errors and close',async()=>{
-  assert.throws(()=>connectionURL('http://example.com'),/HTTPS/);
+test('Full transport allows HTTP and HTTPS URLs, handles errors and close',async()=>{
+  assert.equal(connectionURL('http://100.96.204.101:6011'),'http://100.96.204.101:6011');
+  assert.throws(()=>connectionURL('file:///tmp/lore'),/HTTP/);
   assert.equal(connectionURL('http://localhost:6011/'),'http://localhost:6011');
   const full=new FullStore({nativeFetch:async()=>new Response('{"error":"Unauthorized"}',{status:401})},'https://example.com','a'.repeat(32));
   await assert.rejects(full.identity(),/Unauthorized/);full.close();await assert.rejects(full.identity(),/닫혔/);

@@ -1,3 +1,5 @@
+import {createExtractor} from '../shared/extraction.mjs';
+import {providerConfig} from '../shared/providers.mjs';
 import http from 'node:http';
 import {createHash} from 'node:crypto';
 import {LIMITS, boundedString, requireValue, scopeKey} from '../shared/core.mjs';
@@ -5,7 +7,9 @@ const digest = value => createHash('sha256').update(value).digest('hex');
 
 export function createServer(store, credentials, {workerInterval = 250, extractor = null, hostReader = null} = {}) {
   requireValue(Array.isArray(credentials) && credentials.length > 0 && credentials.length <= 128, 'Configure 1–128 credentials');
-  const principals = new Map();
+  const principals = new Map(),models=new Map();
+  const modelKey=(scope,audience)=>scopeKey(scope)+'\0'+audience;
+  const choose=job=>{const changes=JSON.parse(job.payload).changes,audience=changes.find(c=>c.visibility!=='public')?.visibility??'world';return models.get(job.scope+'\0'+audience)?.extractor??extractor;};
   for (const item of credentials) {
     requireValue(typeof item.token === 'string' && item.token.length >= 32 && item.token.length <= 512, 'Use tokens of at least 32 characters');
     scopeKey(item.scope);
@@ -49,7 +53,14 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
       catch { requireValue(false, 'Invalid URL encoding'); }
       const [resource, id, action] = parts;
       requireValue(parts.length <= 3, 'Not found', 404);
-      if (req.method === 'GET' && resource === 'identity' && parts.length === 1) return json(res,200,{scope,audience,scopeRevision:store.head(scope),extractionEnabled:!!extractor,collectionEnabled:principal.collect===true||principal.ingest===true});
+      if (req.method === 'GET' && resource === 'identity' && parts.length === 1) return json(res,200,{scope,audience,scopeRevision:store.head(scope),extractionEnabled:!!(models.get(modelKey(scope,audience))?.extractor??extractor),configurationEnabled:principal.configure===true,collectionEnabled:principal.collect===true||principal.ingest===true});
+      if(resource==='llm'&&parts.length===1){
+        requireValue(principal.configure===true,'LLM configuration credential required',403);
+        const key=modelKey(scope,audience);
+        if(req.method==='POST'){const config=providerConfig(await body(req));models.set(key,{config,extractor:createExtractor(config)});return json(res,200,{configured:true,provider:config.provider,model:config.model});}
+        if(req.method==='DELETE'){models.delete(key);return json(res,200,{configured:!!extractor});}
+        if(req.method==='GET'){const config=models.get(key)?.config;return json(res,200,config?{configured:true,provider:config.provider,model:config.model,url:config.url}:{configured:!!extractor});}
+      }
       if(resource==='capture'&&req.method==='POST'&&parts.length===1){
         requireValue(principal.collect===true,'Collection credential required',403);
         requireValue(hostReader,'Configure LORE_POCKETRISU_URL on the sidecar',503);
@@ -97,7 +108,7 @@ export function createServer(store, credentials, {workerInterval = 250, extracto
   server.headersTimeout = 10000; server.requestTimeout = 15000; server.maxHeadersCount = 40;
   server.maxConnections = 64;
   const timer = workerInterval > 0 ? setInterval(() => {
-    try { if(extractor)store.runExtraction(extractor).catch(()=>{});else store.runOne(); } catch { console.error('LORE worker unavailable; check storage health'); }
+    try { store.runExtraction(extractor,{select:choose}).catch(()=>{}); } catch { console.error('LORE worker unavailable; check storage health'); }
   },workerInterval) : null;
   timer?.unref();
   server.on('close', () => {clearInterval(timer);store.activeExtraction?.controller.abort();});
