@@ -1,0 +1,43 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {once} from 'node:events';
+import {Store} from '../server/store.mjs';
+import {createServer} from '../server/http.mjs';
+const scope={installationId:'i',userId:'u',characterId:'c',chatId:'chat',branchId:'branch'};
+async function setup(t) {
+  const store=new Store(':memory:');
+  const token='a'.repeat(32), other='b'.repeat(32);
+  const server=createServer(store,[{token,scope},{token:other,scope:{...scope,userId:'other'},ingest:true}],{workerInterval:0});
+  server.listen(0,'127.0.0.1'); await once(server,'listening');
+  t.after(async () => { const closed=once(server,'close'); server.close(); server.closeAllConnections(); await closed; store.close(); });
+  const url=`http://127.0.0.1:${server.address().port}`;
+  const request=(path,method='GET',value,credential=token) => fetch(url+path,{method,headers:{authorization:`Bearer ${credential}`,'content-type':'application/json'},body:value === undefined ? undefined : JSON.stringify(value)});
+  return {store,request,token,other,url};
+}
+test('auth, credential scope, manual conflict and pagination', async t => {
+  const {request,other}=await setup(t);
+  assert.equal((await request('/wiki','GET',undefined,'wrong')).status,401);
+  assert.equal((await request('/health','GET',undefined,'wrong')).status,200);
+  const page={title:'Alice',body:'A researcher',kind:'person'};
+  assert.equal((await request('/wiki/p','PATCH',{page,expectedRevision:0})).status,200);
+  assert.equal((await request('/wiki/p','PATCH',{page,expectedRevision:0})).status,409);
+  assert.equal((await request('/wiki/p','GET',undefined,other)).status,404);
+  const list=await (await request('/wiki?limit=1')).json(); assert.equal(list.pages[0].body,undefined);
+  assert.equal((await request('/wiki?limit=100000')).status,400);
+  assert.equal((await request('/context','POST',{scope:{},budgetBytes:500})).status,400);
+  assert.match((await (await request('/context','POST',{budgetBytes:500})).json()).text,/researcher/);
+});
+test('body cap, malformed input, separate ingest credential, disconnected worker', async t => {
+  const {request,store,other,url}=await setup(t);
+  assert.equal((await request('/context','POST',{query:'x'.repeat(140000)})).status,413);
+  assert.equal((await fetch(url+'/wiki',{headers:{authorization:`Bearer ${other}`},method:'PATCH',body:'bad'})).status,404);
+  assert.equal((await request('/context','POST',null)).status,400);
+  const value={eventId:'e',baseRevision:0,changes:[{id:'m',revision:1,op:'upsert',visibility:'public',text:'Committed text'}]};
+  assert.equal((await request('/events','POST',value)).status,403);
+  const response=await request('/events','POST',value,other); assert.equal(response.status,202);
+  const job=await response.json();
+  // No client connection or watcher is involved in processing accepted jobs.
+  store.runOne();
+  assert.equal((await (await request('/jobs/'+job.id,'GET',undefined,other)).json()).state,'completed');
+  assert.equal((await request('/jobs/'+job.id)).status,403);
+});
