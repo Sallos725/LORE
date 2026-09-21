@@ -729,6 +729,7 @@ class AutoMemory {
   requireValue(['prompt','final'].includes(injectionMode),'Invalid injection mode');this.switchStore=switchStore;this.selector=identity.selector;this.injectionMode=injectionMode;this.store=store;this.scope=scope;this.extractor=extractor;this.memoryBudget=memoryBudget;this.controller=new AbortController();
   this.beforeHook=(messages,type)=>this.before(messages,type);this.bodyHook=(body,type)=>this.finalBody(body,type);
   try {
+   const settings=await this.host.getDatabase(['maxContext','maxResponse']);requireValue(settings&&Number(settings.maxContext)>0&&Number(settings.maxResponse)>0,'요청 예산을 읽을 권한이 필요합니다.');
    if(injectionMode==='final'){requireValue(typeof this.host.registerBodyIntercepter==='function','요청 검사 API를 지원하는 PocketRisu가 필요합니다.');
    this.bodyRegistration=await this.host.registerBodyIntercepter(this.bodyHook);requireValue(this.bodyRegistration?.id,'요청 검사 권한이 거부되었습니다.');}
    await this.host.addRisuReplacer('beforeRequest',this.beforeHook);this.registered=true;
