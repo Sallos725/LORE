@@ -29,3 +29,6 @@ jobs:
         with:
           context: .
           push: false
+          load: true
+          tags: lore:ci-smoke
+      - run: python3 scripts/check-container.py --image lore:ci-smoke

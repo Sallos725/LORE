@@ -1,4 +1,4 @@
-FROM node:22.23.0-bookworm-slim
+FROM node:22.23.0-bookworm-slim@sha256:d9f850096136edbc402debdd8729579a288aac64574ada0ff4db26b6ae58b0b2
 WORKDIR /app
 RUN mkdir /data && chown node:node /data
 COPY --chown=node:node package.json ./

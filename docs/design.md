@@ -10,4 +10,4 @@
 - 수정된 원문, 늦은 작업, pinned/manual 페이지는 자동 처리로 덮어쓰지 않는다. 별도 분기는 빈 상태에서 시작하며 암묵적 복제를 하지 않는다.
 - 컨텍스트는 UTF-8 byte 상한으로 보수적으로 제한한다. 정확한 모델 토큰 수나 전체 요청 예산 검증은 아니므로 API가 token budget이라고 부르지 않는다. 포함/제외 사유를 반환한다.
 - 자동 prompt injection은 하지 않는다. 호스트의 범위 및 전체 프롬프트 예산을 확인할 수 있는 서버 연결이 먼저다.
-- GitHub/Gitea는 같은 검증·패키징 스크립트를 실행한다. 버전 태그는 package.json과 일치해야 한다. prerelease는 latest 컨테이너 태그를 갱신하지 않는다. 배포란 release asset/registry 발행이며 운영 스택 자동 교체는 포함하지 않는다.
+- GitHub/Gitea는 같은 검증·패키징 스크립트를 실행한다. 버전 태그는 package.json과 일치해야 한다. 컨테이너는 버전 태그만 발행하며 latest는 사용하지 않는다. 배포란 release asset/registry 발행이며 운영 스택 자동 교체는 포함하지 않는다.

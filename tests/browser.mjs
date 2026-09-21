@@ -48,7 +48,7 @@ try {
         for(let i=0;i<5;i++){await page.evaluate(()=>window.openLore());await page.locator('[data-close]').click();}
         await page.evaluate(()=>window.disposeLore());assert.equal(await page.evaluate(()=>window.registrations.size),0);
         assert.equal(await page.evaluate(()=>window.forbiddenCalls),0);assert.deepEqual(errors,[]);
-        await page.close();console.log(`PASS ${name} ${edition}: CRUD, context, escaping, export, repeated close and unload`);
+        await page.close();console.log(`PASS ${name} ${edition}: create/read/update, context, escaping, export, repeated close and unload`);
       }
     } finally {await browser.close();}
   }
