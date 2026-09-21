@@ -106,6 +106,7 @@ export class Store {
       requireValue(pending < 1000, 'Queue full', 503);
       for (const change of event.changes) {
         const source = this.db.prepare('SELECT revision FROM sources WHERE scope=? AND id=?').get(key, change.id);
+        if (source) this.source(scope, change.id, source.revision, audience);
         requireValue(change.revision > (source?.revision ?? 0), 'Message revision conflict', 409);
         this.db.prepare('INSERT INTO source_versions VALUES (?,?,?,?)').run(key, change.id, change.revision, JSON.stringify(change));
         this.db.prepare('INSERT OR REPLACE INTO sources VALUES (?,?,?,?,?)').run(key, change.id, change.revision, change.op === 'delete' ? '' : change.text, Number(change.op === 'delete'));

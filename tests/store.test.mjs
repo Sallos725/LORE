@@ -76,4 +76,7 @@ test('source audience is preserved through event jobs and evidence lookup', t =>
   assert.equal(s.list(scope).pages.length,0);assert.equal(s.context(scope).text,'');
   assert.match(s.context(scope,{audience:'Alice'}).text,/Hidden fact/);
   assert.throws(()=>s.source(scope,'secret',1),/not found/);
+  assert.throws(()=>s.enqueue(scope,{eventId:'overwrite-private',baseRevision:1,changes:[{id:'secret',revision:2,op:'delete',visibility:'public'}]}),/not found/);
+  assert.equal(s.head(scope),1);
+  assert.match(s.context(scope,{audience:'Alice'}).text,/Hidden fact/);
 });
