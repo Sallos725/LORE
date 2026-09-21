@@ -24,6 +24,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
       - run: sh scripts/validate.sh
+      - run: python3 scripts/check-host.py
       - name: Build version-matched assets
         env:
           RELEASE_TAG: ${{ github.ref_name }}
